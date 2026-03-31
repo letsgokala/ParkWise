@@ -1,0 +1,7 @@
+{
+  "name": "ParkWise: Smart City Parking Management System",
+  "description": "An AI-powered smart parking solution that provides real-time availability updates, location-based services, and an AI-powered coefficient scoring model to recommend the most optimal parking options for drivers.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

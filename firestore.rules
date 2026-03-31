@@ -1,0 +1,153 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required) - User's unique ID
+    //   - email: string (required) - User's email address
+    //   - role: string (required) - User's role (driver, parking_admin, sys_admin)
+    //   - displayName: string (optional) - User's display name
+    //
+    // Collection: parkingLocations
+    // Document ID: {facilityId}
+    // Fields:
+    //   - facilityId: string (required) - Unique facility ID
+    //   - facilityName: string (required) - Name of the facility
+    //   - address: string (required) - Physical address
+    //   - latitude: number (required) - Latitude coordinate
+    //   - longitude: number (required) - Longitude coordinate
+    //   - status: string (required) - Status (Pending, Verified, Full, Suspended)
+    //   - totalSpaces: int (required) - Total capacity
+    //   - availableSpaces: int (required) - Current available spots
+    //   - pricePerHour: number (required) - Hourly rate
+    //
+    // Collection: drivers
+    // Document ID: {driverId}
+    // Fields:
+    //   - driverId: string (required) - Unique driver ID
+    //   - name: string (required) - Full name
+    //   - email: string (required) - Email address
+    //   - phoneNumber: string (required) - Contact number
+    //   - currentLat: number (optional) - Current latitude
+    //   - currentLong: number (optional) - Current longitude
+    //   - accountStatus: string (optional) - Status (Active, Suspended, Banned)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email == "nwakala730@gmail.com" && request.auth.token.email_verified == true);
+    }
+
+    function isParkingAdmin(facilityId) {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parking_admin' &&
+        get(/databases/$(database)/documents/parkingAdmins/$(request.auth.uid)).data.facilityID == facilityId;
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.uid is string &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['driver', 'parking_admin', 'sys_admin'] &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('createdAt' in data) || data.createdAt is string);
+    }
+
+    function isValidParkingLocation(data) {
+      return data.facilityName is string && data.facilityName.size() > 0 && data.facilityName.size() < 200 &&
+             data.address is string && data.address.size() > 0 &&
+             data.latitude is number && data.longitude is number &&
+             data.status in ['Pending', 'Verified', 'Full', 'Suspended'] &&
+             data.totalSpaces is int && data.totalSpaces >= 0 &&
+             data.availableSpaces is int && data.availableSpaces >= 0 && data.availableSpaces <= data.totalSpaces &&
+             data.pricePerHour is number && data.pricePerHour >= 0 &&
+             (!('createdAt' in data) || data.createdAt is string);
+    }
+
+    function isValidDriver(data) {
+      return data.driverId is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.phoneNumber is string && data.phoneNumber.size() >= 10 && data.phoneNumber.size() <= 15 &&
+             (!('currentLat' in data) || data.currentLat is number) &&
+             (!('currentLong' in data) || data.currentLong is number) &&
+             (!('accountStatus' in data) || data.accountStatus in ['Active', 'Suspended', 'Banned']) &&
+             (!('createdAt' in data) || data.createdAt is string);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(uid) || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(uid) || isAdmin());
+    }
+
+    match /parkingLocations/{facilityId} {
+      allow read: if true; // Publicly readable for drivers to find parking
+      allow create: if isAuthenticated() && isValidParkingLocation(request.resource.data); 
+      allow update: if isAuthenticated() && (isAdmin() || isParkingAdmin(facilityId));
+      allow delete: if isAdmin();
+    }
+
+    match /drivers/{driverId} {
+      allow read: if isOwner(driverId) || isAdmin();
+      allow create: if isAuthenticated() && isValidDriver(request.resource.data) && (isOwner(driverId) || isAdmin());
+      allow update: if isAuthenticated() && isValidDriver(request.resource.data) && (isOwner(driverId) || isAdmin());
+    }
+
+    match /parkingAdmins/{adminId} {
+      allow read: if isOwner(adminId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(adminId);
+      allow update: if isAdmin() || isOwner(adminId);
+    }
+
+    match /_test_/{docId} {
+      allow read: if true;
+    }
+
+    match /systemAdmins/{sysAdminId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+    }
+
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
