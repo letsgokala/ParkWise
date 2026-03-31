@@ -9,7 +9,7 @@ ParkWise is a smart parking management system built for three user roles:
 The current version uses:
 
 - `React + Vite + TypeScript` for the frontend
-- `Express + TypeScript` for the API
+- `Express + TypeScript + TypeORM` for the API
 - `PostgreSQL` for authentication and application data
 - `Gemini` for facility ranking recommendations on the driver dashboard
 
@@ -25,7 +25,7 @@ The current version uses:
 ## Tech Stack
 
 - Frontend: React, Vite, TypeScript, Tailwind CSS, React Router
-- Backend: Express, TypeScript
+- Backend: Express, TypeScript, TypeORM
 - Database: PostgreSQL
 - Maps: Leaflet, OpenStreetMap
 - AI: Google Gemini
@@ -51,6 +51,13 @@ cd ParkWise
 ```bash
 npm install
 ```
+
+The repository is organized as a small workspace monorepo:
+
+- `parkwise-client` contains the frontend app
+- `parkwise-api` contains the backend API
+
+You still run everything from the project root using the same commands.
 
 ## Database Setup
 
@@ -180,10 +187,23 @@ http://localhost:3000
 
 ```text
 .
-├── server/          # Express API and PostgreSQL bootstrap
-├── src/             # React frontend
-├── src/lib/api.ts   # Frontend API client
-├── .env.example     # Example backend and frontend environment values
+├── parkwise-client/
+│   ├── src/
+│   ├── index.html
+│   └── vite.config.ts
+├── parkwise-api/
+│   └── src/
+│       ├── config/
+│       ├── controllers/
+│       ├── db/
+│       │   ├── migrations/
+│       │   └── seeds/
+│       ├── entities/
+│       ├── middleware/
+│       ├── routes/
+│       ├── services/
+│       └── types/
+├── .env.example
 └── README.md
 ```
 
@@ -216,4 +236,3 @@ Make sure `.env.local` contains a valid `GEMINI_API_KEY`.
 - Re-enable OAuth on top of the PostgreSQL backend
 - Add Docker and `docker-compose` for app + database setup
 - Add tests for API routes and auth flows
-
