@@ -11,6 +11,7 @@
     "build": "npm run build --workspace parkwise-client",
     "preview": "npm run preview --workspace parkwise-client",
     "lint": "npm run lint --workspace parkwise-client && npm run lint --workspace parkwise-api",
+    "ci": "npm run lint && npm run build",
     "clean": "rm -rf parkwise-client/dist"
   }
 }
