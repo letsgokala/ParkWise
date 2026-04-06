@@ -73,10 +73,8 @@ const DriverDashboard = () => {
   const [filter, setFilter] = useState('all');
 
   useEffect(() => {
-    // Watch user location
-    let watchId: number;
     if (navigator.geolocation) {
-      watchId = navigator.geolocation.watchPosition(
+      navigator.geolocation.getCurrentPosition(
         (position) => {
           setUserLocation({
             lat: position.coords.latitude,
@@ -84,32 +82,39 @@ const DriverDashboard = () => {
           });
         },
         (error) => {
-          console.error("Error watching location:", error);
-          if (!userLocation) {
-            setUserLocation({ lat: 9.03, lng: 38.74 });
-          }
+          console.error("Error getting location:", error);
+          setUserLocation({ lat: 9.03, lng: 38.74 });
         },
         { enableHighAccuracy: true }
       );
+    } else {
+      setUserLocation({ lat: 9.03, lng: 38.74 });
     }
 
-    const loadFacilities = async () => {
+    const loadFacilities = async (showLoader = false) => {
+      if (showLoader) {
+        setLoading(true);
+      }
+
       try {
         const response = await getParkingLocations(['Verified', 'Full']);
         setFacilities(response.facilities as ParkingLocation[]);
       } catch (error) {
         console.error('Failed to load parking locations:', error);
       } finally {
-        setLoading(false);
+        if (showLoader) {
+          setLoading(false);
+        }
       }
     };
 
-    loadFacilities();
-    const intervalId = window.setInterval(loadFacilities, 10000);
+    void loadFacilities(true);
+    const intervalId = window.setInterval(() => {
+      void loadFacilities();
+    }, 10000);
 
     return () => {
       window.clearInterval(intervalId);
-      if (watchId) navigator.geolocation.clearWatch(watchId);
     };
   }, []);
 
@@ -117,14 +122,19 @@ const DriverDashboard = () => {
     const performRanking = async () => {
       if (userLocation && facilities.length > 0) {
         setRanking(true);
-        const ranked = await rankParkingFacilities(userLocation.lat, userLocation.lng, facilities);
-        setScoredFacilities(ranked);
-        setRanking(false);
+        try {
+          const ranked = await rankParkingFacilities(userLocation.lat, userLocation.lng, facilities);
+          setScoredFacilities(ranked);
+        } finally {
+          setRanking(false);
+        }
+      } else if (!loading && facilities.length === 0) {
+        setScoredFacilities([]);
       }
     };
 
-    performRanking();
-  }, [userLocation, facilities]);
+    void performRanking();
+  }, [userLocation, facilities, loading]);
 
   const filteredFacilities = scoredFacilities.filter(f => {
     if (filter === 'all') return true;
@@ -139,6 +149,9 @@ const DriverDashboard = () => {
         <div>
           <h1 className="text-3xl font-extrabold text-gray-900">Find Parking</h1>
           <p className="text-gray-500">AI-powered recommendations near you</p>
+          {ranking && !loading && (
+            <p className="mt-2 text-sm font-medium text-orange-600">Refreshing recommendations...</p>
+          )}
           {!getStoredUser() && (
             <div className="mt-2 bg-orange-50 text-orange-700 px-4 py-2 rounded-xl text-sm font-medium border border-orange-100 inline-block">
               Guest Mode: Sign in to save your favorite spots and history.
@@ -171,7 +184,7 @@ const DriverDashboard = () => {
       <div className="grid lg:grid-cols-3 gap-8">
         {/* List View */}
         <div className="lg:col-span-2 space-y-6">
-          {loading || ranking ? (
+          {loading ? (
             <div className="space-y-6">
               {[1, 2, 3].map(i => (
                 <div key={i} className="bg-white p-6 rounded-[2rem] border border-gray-100 animate-pulse space-y-4">
