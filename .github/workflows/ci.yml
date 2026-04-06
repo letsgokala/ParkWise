@@ -28,7 +28,7 @@ jobs:
           --health-retries 5
 
     env:
-      GEMINI_API_KEY: test-key
+      VITE_GEMINI_API_KEY: test-key
       VITE_API_PROXY_TARGET: http://localhost:4000
       CLIENT_URL: http://localhost:3000
       PORT: 4000

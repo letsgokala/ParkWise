@@ -111,7 +111,7 @@ SYS_ADMIN_NAME=System Admin
 Create a `.env.local` file in the project root:
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key
+VITE_GEMINI_API_KEY=your_gemini_api_key
 ```
 
 ## First Start Behavior
@@ -229,7 +229,7 @@ CREATE DATABASE parkwise;
 
 ### Gemini ranking is not working
 
-Make sure `.env.local` contains a valid `GEMINI_API_KEY`.
+Make sure `.env.local` contains a valid `VITE_GEMINI_API_KEY`.
 
 ## Future Improvements
 
