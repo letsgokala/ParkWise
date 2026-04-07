@@ -7,58 +7,103 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  errorInfo: ErrorInfo | null;
+  copied: boolean;
+  showDetails: boolean;
 }
 
-class ErrorBoundary extends (React.Component as any) {
-  constructor(props: any) {
+class ErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
     super(props);
     this.state = {
       hasError: false,
-      error: null
+      error: null,
+      errorInfo: null,
+      copied: false,
+      showDetails: false,
     };
   }
 
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+  static getDerivedStateFromError(error: Error): State {
+    return {
+      hasError: true,
+      error,
+      errorInfo: null,
+      copied: false,
+      showDetails: false,
+    };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
+    this.setState({ errorInfo });
   }
 
-  public render() {
-    if (this.state.hasError) {
-      let errorMessage = 'Something went wrong.';
-      
-      try {
-        // Check if it's a Firestore error JSON
-        const firestoreError = JSON.parse(this.state.error?.message || '');
-        if (firestoreError.error && firestoreError.operationType) {
-          errorMessage = `Database Error: ${firestoreError.error} during ${firestoreError.operationType} on ${firestoreError.path}`;
-        }
-      } catch (e) {
-        errorMessage = this.state.error?.message || errorMessage;
-      }
+  resetBoundary = () => {
+    this.setState({
+      hasError: false,
+      error: null,
+      errorInfo: null,
+      copied: false,
+      showDetails: false,
+    });
+  };
 
+  copyErrorDetails = async () => {
+    const errorMessage = this.state.error?.message || 'Unknown error';
+    const stack = this.state.error?.stack || 'No stack trace available';
+    const componentStack =
+      this.state.errorInfo?.componentStack || 'No component stack available';
+    const details = [
+      'ParkWise Error Report',
+      `Time: ${new Date().toISOString()}`,
+      `Message: ${errorMessage}`,
+      `Stack: ${stack}`,
+      `Component Stack: ${componentStack}`,
+    ].join('\n');
+
+    try {
+      await navigator.clipboard.writeText(details);
+      this.setState({ copied: true });
+    } catch (copyError) {
+      console.error('Failed to copy error details:', copyError);
+      this.setState({ copied: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-          <div className="bg-white p-8 rounded-[2.5rem] border border-red-100 shadow-xl max-w-md w-full text-center space-y-6">
-            <div className="bg-red-50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto">
-              <span className="text-3xl">⚠️</span>
-            </div>
-            <div className="space-y-2">
-              <h2 className="text-2xl font-bold text-gray-900">Application Error</h2>
-              <p className="text-gray-500 text-sm leading-relaxed">
-                {errorMessage}
-              </p>
-            </div>
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full bg-orange-600 text-white py-4 rounded-2xl font-bold hover:bg-orange-700 transition-all shadow-lg shadow-orange-100"
-            >
-              Reload Application
+        <div style={{ padding: '1rem', border: '1px solid #e5e7eb', borderRadius: 8 }}>
+          <h2>Application Error</h2>
+          <p>{this.state.error?.message || 'Something went wrong.'}</p>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button onClick={this.resetBoundary}>Try Again</button>
+            <button onClick={() => window.location.reload()}>Reload Application</button>
+            <button onClick={() => this.setState({ showDetails: !this.state.showDetails })}>
+              {this.state.showDetails ? 'Hide Error Details' : 'Show Error Details'}
+            </button>
+            <button onClick={this.copyErrorDetails}>
+              {this.state.copied ? 'Copied!' : 'Copy Error Details'}
             </button>
           </div>
+          {this.state.showDetails && (
+            <pre
+              style={{
+                marginTop: '1rem',
+                padding: '0.75rem',
+                background: '#111827',
+                color: '#f9fafb',
+                borderRadius: 6,
+                overflowX: 'auto',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {this.state.error?.stack || 'No stack trace available.'}
+              {'\n\n'}
+              {this.state.errorInfo?.componentStack || 'No component stack available.'}
+            </pre>
+          )}
         </div>
       );
     }
