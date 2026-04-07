@@ -1,4 +1,6 @@
 export type UserRole = 'driver' | 'parking_admin' | 'sys_admin';
+export type OAuthProvider = 'google' | 'facebook' | 'github';
+export type OAuthMode = 'login' | 'register';
 
 export interface AppUserDto {
   uid: string;
@@ -51,6 +53,12 @@ export interface RegisterInput {
 export interface LoginInput {
   email?: string;
   password?: string;
+}
+
+export interface OAuthStatePayload {
+  provider: OAuthProvider;
+  mode: OAuthMode;
+  role: Extract<UserRole, 'driver' | 'parking_admin'>;
 }
 
 export interface UpdateFacilityInput {

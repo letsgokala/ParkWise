@@ -31,6 +31,7 @@ const ProtectedRoute = ({ children, allowedRoles, user, role }: {
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import DriverDashboard from './pages/DriverDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import SysAdminDashboard from './pages/SysAdminDashboard';
@@ -240,6 +241,7 @@ export default function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage onAuthSuccess={handleAuthSuccess} />} />
             <Route path="/register" element={<RegisterPage onAuthSuccess={handleAuthSuccess} />} />
+            <Route path="/oauth/callback" element={<OAuthCallbackPage onAuthSuccess={handleAuthSuccess} />} />
             <Route 
               path="/driver/dashboard" 
               element={

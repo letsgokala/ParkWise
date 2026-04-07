@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { UserPlus, Mail, Lock, User, Phone, ArrowRight, AlertCircle, Car, Building2, Github, Globe, Chrome, ShieldCheck } from 'lucide-react';
-import { AppUser, registerUser, saveSession } from '../lib/api';
+import { UserPlus, Mail, Lock, User, Phone, ArrowRight, AlertCircle, Car, Building2, ShieldCheck } from 'lucide-react';
+import { AppUser, getOAuthStartUrl, OAuthProvider, registerUser, saveSession } from '../lib/api';
 
 const getAuthErrorMessage = (err: any, action: 'register' | 'login') => {
   const message = err?.message || '';
@@ -49,14 +49,8 @@ const RegisterPage = ({ onAuthSuccess }: { onAuthSuccess?: (user: AppUser) => vo
     }
   };
 
-  const socialLogin = async (providerName: string) => {
-    setLoading(true);
-    setError('');
-    try {
-      setError(`OAuth sign-in with ${providerName} is not configured yet in the PostgreSQL version. Use email and password for now.`);
-    } finally {
-      setLoading(false);
-    }
+  const socialLogin = (provider: OAuthProvider) => {
+    window.location.assign(getOAuthStartUrl(provider, { mode: 'register', role: role as 'driver' | 'parking_admin' }));
   };
 
   return (
@@ -218,7 +212,8 @@ const RegisterPage = ({ onAuthSuccess }: { onAuthSuccess?: (user: AppUser) => vo
           {/* Social Login - Vertical & Full Width */}
           <div className="space-y-4">
             <button
-              onClick={() => socialLogin('Google')}
+              type="button"
+              onClick={() => socialLogin('google')}
               className="w-full flex items-center justify-center space-x-3 p-4 rounded-2xl border-2 border-gray-50 hover:border-orange-200 hover:bg-orange-50 transition-all group"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -230,25 +225,25 @@ const RegisterPage = ({ onAuthSuccess }: { onAuthSuccess?: (user: AppUser) => vo
               <span className="font-bold text-gray-600 group-hover:text-orange-600">Sign up with Google</span>
             </button>
             <button
-              onClick={() => socialLogin('GitHub')}
+              type="button"
+              onClick={() => socialLogin('facebook')}
+              className="w-full flex items-center justify-center space-x-3 p-4 rounded-2xl border-2 border-gray-50 hover:border-orange-200 hover:bg-orange-50 transition-all group"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.099 4.388 23.094 10.125 24v-8.438H7.078v-3.489h3.047V9.413c0-3.022 1.792-4.693 4.533-4.693 1.313 0 2.686.236 2.686.236v2.969h-1.514c-1.49 0-1.955.93-1.955 1.885v2.263h3.328l-.532 3.489h-2.796V24C19.612 23.094 24 18.099 24 12.073z" fill="#1877F2"/>
+                <path d="M16.671 15.562l.532-3.489h-3.328V9.81c0-.955.465-1.885 1.955-1.885h1.514V4.956s-1.373-.236-2.686-.236c-2.741 0-4.533 1.671-4.533 4.693v2.66H7.078v3.489h3.047V24a12.11 12.11 0 003.75 0v-8.438h2.796z" fill="white"/>
+              </svg>
+              <span className="font-bold text-gray-600 group-hover:text-orange-600">Sign up with Facebook</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => socialLogin('github')}
               className="w-full flex items-center justify-center space-x-3 p-4 rounded-2xl border-2 border-gray-50 hover:border-orange-200 hover:bg-orange-50 transition-all group"
             >
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.341-3.369-1.341-.454-1.152-1.11-1.459-1.11-1.459-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z" fill="#24292F"/>
               </svg>
               <span className="font-bold text-gray-600 group-hover:text-orange-600">Sign up with GitHub</span>
-            </button>
-            <button
-              onClick={() => socialLogin('Microsoft')}
-              className="w-full flex items-center justify-center space-x-3 p-4 rounded-2xl border-2 border-gray-50 hover:border-orange-200 hover:bg-orange-50 transition-all group"
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M11.4 1H1v10.4h10.4V1z" fill="#F25022"/>
-                <path d="M23 1H12.6v10.4H23V1z" fill="#7FBA00"/>
-                <path d="M11.4 12.6H1V23h10.4V12.6z" fill="#00A4EF"/>
-                <path d="M23 12.6H12.6V23H23V12.6z" fill="#FFB900"/>
-              </svg>
-              <span className="font-bold text-gray-600 group-hover:text-orange-600">Sign up with Microsoft</span>
             </button>
           </div>
 

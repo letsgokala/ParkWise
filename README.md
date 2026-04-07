@@ -91,6 +91,7 @@ Create a `.env` file in the project root:
 
 ```env
 CLIENT_URL=http://localhost:3000
+API_URL=http://localhost:4000
 PORT=4000
 
 PGHOST=localhost
@@ -104,6 +105,13 @@ JWT_SECRET=replace-this-with-a-long-random-string
 SYS_ADMIN_EMAIL=sysadmin@parkwise.local
 SYS_ADMIN_PASSWORD=ParkWiseAdmin123!
 SYS_ADMIN_NAME=System Admin
+
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+FACEBOOK_OAUTH_CLIENT_ID=
+FACEBOOK_OAUTH_CLIENT_SECRET=
+GITHUB_OAUTH_CLIENT_ID=
+GITHUB_OAUTH_CLIENT_SECRET=
 ```
 
 ### Frontend `.env.local`
@@ -113,6 +121,26 @@ Create a `.env.local` file in the project root:
 ```env
 VITE_GEMINI_API_KEY=your_gemini_api_key
 ```
+
+## OAuth Setup
+
+OAuth buttons are wired for:
+
+- Google
+- Facebook
+- GitHub
+
+Google is the primary provider and the smoothest one to test first.
+
+For local development, set these callback URLs in each provider console:
+
+- Google: `http://localhost:4000/api/auth/oauth/google/callback`
+- Facebook: `http://localhost:4000/api/auth/oauth/facebook/callback`
+- GitHub: `http://localhost:4000/api/auth/oauth/github/callback`
+
+You should also make sure your frontend origin is allowed where the provider requires it:
+
+- `http://localhost:3000`
 
 ## First Start Behavior
 
