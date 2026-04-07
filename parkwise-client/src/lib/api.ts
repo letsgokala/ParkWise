@@ -1,4 +1,5 @@
 export type UserRole = 'driver' | 'parking_admin' | 'sys_admin';
+export type OAuthProvider = 'google' | 'facebook' | 'github';
 
 export interface AppUser {
   uid: string;
@@ -122,6 +123,18 @@ export const loginUser = async (payload: { email: string; password: string }) =>
     method: 'POST',
     body: JSON.stringify(payload),
   });
+};
+
+export const getOAuthStartUrl = (
+  provider: OAuthProvider,
+  options: { mode: 'login' | 'register'; role?: 'driver' | 'parking_admin' }
+) => {
+  const params = new URLSearchParams({
+    mode: options.mode,
+    role: options.role || 'driver',
+  });
+
+  return `${API_BASE}/auth/oauth/${provider}/start?${params.toString()}`;
 };
 
 export const getCurrentUser = async () => {
