@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { rankParkingFacilities, ParkingLocation, ScoredParkingLocation } from '../lib/gemini';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Navigation, Star, Info, Filter, Search, Zap, Clock, CreditCard, Map as MapIcon } from 'lucide-react';
@@ -71,19 +71,39 @@ const DriverDashboard = () => {
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [destination, setDestination] = useState<{ lat: number, lng: number } | null>(null);
   const [filter, setFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'best-match' | 'price-low' | 'availability-high' | 'name-asc'>('best-match');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const lastFacilitiesSnapshotRef = useRef('');
+
+  const hasMeaningfulLocationChange = (
+    previous: { lat: number, lng: number } | null,
+    next: { lat: number, lng: number }
+  ) => {
+    if (!previous) return true;
+
+    const latDelta = Math.abs(previous.lat - next.lat);
+    const lngDelta = Math.abs(previous.lng - next.lng);
+
+    return latDelta > 0.0003 || lngDelta > 0.0003;
+  };
 
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setUserLocation({
+          const nextLocation = {
             lat: position.coords.latitude,
             lng: position.coords.longitude
-          });
+          };
+
+          setUserLocation((currentLocation) =>
+            hasMeaningfulLocationChange(currentLocation, nextLocation) ? nextLocation : currentLocation
+          );
         },
         (error) => {
-          console.error("Error getting location:", error);
-          setUserLocation({ lat: 9.03, lng: 38.74 });
+          console.error("Error watching location:", error);
+          setUserLocation((currentLocation) => currentLocation ?? { lat: 9.03, lng: 38.74 });
         },
         { enableHighAccuracy: true }
       );
@@ -98,7 +118,21 @@ const DriverDashboard = () => {
 
       try {
         const response = await getParkingLocations(['Verified', 'Full']);
-        setFacilities(response.facilities as ParkingLocation[]);
+        const nextFacilities = response.facilities as ParkingLocation[];
+        const snapshot = JSON.stringify(
+          nextFacilities.map((facility) => ({
+            facilityId: facility.facilityId,
+            status: facility.status,
+            availableSpaces: facility.availableSpaces,
+            pricePerHour: facility.pricePerHour,
+            totalSpaces: facility.totalSpaces,
+          }))
+        );
+
+        if (snapshot !== lastFacilitiesSnapshotRef.current) {
+          lastFacilitiesSnapshotRef.current = snapshot;
+          setFacilities(nextFacilities);
+        }
       } catch (error) {
         console.error('Failed to load parking locations:', error);
       } finally {
@@ -136,12 +170,30 @@ const DriverDashboard = () => {
     void performRanking();
   }, [userLocation, facilities, loading]);
 
-  const filteredFacilities = scoredFacilities.filter(f => {
-    if (filter === 'all') return true;
-    if (filter === 'cheap') return f.pricePerHour < 20;
-    if (filter === 'available') return f.availableSpaces > 0;
-    return true;
-  });
+  const normalizedSearchTerm = deferredSearchTerm.trim().toLowerCase();
+
+  const filteredFacilities = scoredFacilities
+    .filter((facility) => {
+      const matchesSearch =
+        normalizedSearchTerm.length === 0 ||
+        facility.facilityName.toLowerCase().includes(normalizedSearchTerm) ||
+        facility.address.toLowerCase().includes(normalizedSearchTerm);
+
+      if (!matchesSearch) return false;
+      if (filter === 'all') return true;
+      if (filter === 'cheap') return facility.pricePerHour < 20;
+      if (filter === 'available') return facility.availableSpaces > 0;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'price-low') return a.pricePerHour - b.pricePerHour;
+      if (sortBy === 'availability-high') return b.availableSpaces - a.availableSpaces;
+      if (sortBy === 'name-asc') return a.facilityName.localeCompare(b.facilityName);
+      return b.score - a.score;
+    });
+
+  const visibleAvailableSpots = filteredFacilities.reduce((sum, facility) => sum + facility.availableSpaces, 0);
+  const showLoadingState = loading || (ranking && scoredFacilities.length === 0);
 
   return (
     <div className="space-y-8">
@@ -158,33 +210,82 @@ const DriverDashboard = () => {
             </div>
           )}
         </div>
-        
-        <div className="flex items-center space-x-2 bg-white p-1 rounded-2xl border border-gray-100 shadow-sm">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${filter === 'all' ? 'bg-orange-600 text-white shadow-md shadow-orange-100' : 'text-gray-500 hover:bg-gray-50'}`}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setFilter('cheap')}
-            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${filter === 'cheap' ? 'bg-orange-600 text-white shadow-md shadow-orange-100' : 'text-gray-500 hover:bg-gray-50'}`}
-          >
-            Budget
-          </button>
-          <button
-            onClick={() => setFilter('available')}
-            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${filter === 'available' ? 'bg-orange-600 text-white shadow-md shadow-orange-100' : 'text-gray-500 hover:bg-gray-50'}`}
-          >
-            Available
-          </button>
+
+        <div className="flex flex-col gap-3 md:items-end">
+          <div className="flex flex-wrap items-center gap-2 bg-white p-1 rounded-2xl border border-gray-100 shadow-sm">
+            <button
+              onClick={() => setFilter('all')}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${filter === 'all' ? 'bg-orange-600 text-white shadow-md shadow-orange-100' : 'text-gray-500 hover:bg-gray-50'}`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setFilter('cheap')}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${filter === 'cheap' ? 'bg-orange-600 text-white shadow-md shadow-orange-100' : 'text-gray-500 hover:bg-gray-50'}`}
+            >
+              Budget
+            </button>
+            <button
+              onClick={() => setFilter('available')}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${filter === 'available' ? 'bg-orange-600 text-white shadow-md shadow-orange-100' : 'text-gray-500 hover:bg-gray-50'}`}
+            >
+              Available
+            </button>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+            <label className="flex items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-gray-100 shadow-sm min-w-[280px]">
+              <Search className="h-4 w-4 text-orange-600" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search by facility or address"
+                className="w-full bg-transparent text-sm font-medium text-gray-700 outline-none placeholder:text-gray-400"
+              />
+            </label>
+
+            <label className="flex items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-gray-100 shadow-sm">
+              <Filter className="h-4 w-4 text-orange-600" />
+              <select
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
+                className="bg-transparent text-sm font-bold text-gray-700 outline-none"
+              >
+                <option value="best-match">Best Match</option>
+                <option value="price-low">Lowest Price</option>
+                <option value="availability-high">Most Spaces</option>
+                <option value="name-asc">Name A-Z</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="bg-white px-5 py-4 rounded-2xl border border-gray-100 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Matches</p>
+          <p className="mt-2 text-2xl font-black text-gray-900">{filteredFacilities.length}</p>
+        </div>
+        <div className="bg-white px-5 py-4 rounded-2xl border border-gray-100 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Visible Spots</p>
+          <p className="mt-2 text-2xl font-black text-gray-900">{visibleAvailableSpots}</p>
+        </div>
+        <div className="bg-white px-5 py-4 rounded-2xl border border-gray-100 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Sort Mode</p>
+          <p className="mt-2 text-lg font-black text-gray-900">
+            {sortBy === 'best-match' && 'AI Best Match'}
+            {sortBy === 'price-low' && 'Lowest Price'}
+            {sortBy === 'availability-high' && 'Most Spaces'}
+            {sortBy === 'name-asc' && 'Name A-Z'}
+          </p>
         </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
         {/* List View */}
         <div className="lg:col-span-2 space-y-6">
-          {loading ? (
+          {showLoadingState ? (
             <div className="space-y-6">
               {[1, 2, 3].map(i => (
                 <div key={i} className="bg-white p-6 rounded-[2rem] border border-gray-100 animate-pulse space-y-4">
