@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useState } from 'react';
+import React, { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { rankParkingFacilities, ParkingLocation, ScoredParkingLocation } from '../lib/gemini';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Navigation, Star, Info, Filter, Search, Zap, Clock, CreditCard, Map as MapIcon } from 'lucide-react';
@@ -74,6 +74,19 @@ const DriverDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'best-match' | 'price-low' | 'availability-high' | 'name-asc'>('best-match');
   const deferredSearchTerm = useDeferredValue(searchTerm);
+  const lastFacilitiesSnapshotRef = useRef('');
+
+  const hasMeaningfulLocationChange = (
+    previous: { lat: number, lng: number } | null,
+    next: { lat: number, lng: number }
+  ) => {
+    if (!previous) return true;
+
+    const latDelta = Math.abs(previous.lat - next.lat);
+    const lngDelta = Math.abs(previous.lng - next.lng);
+
+    return latDelta > 0.0003 || lngDelta > 0.0003;
+  };
 
   useEffect(() => {
     // Watch user location
@@ -81,16 +94,18 @@ const DriverDashboard = () => {
     if (navigator.geolocation) {
       watchId = navigator.geolocation.watchPosition(
         (position) => {
-          setUserLocation({
+          const nextLocation = {
             lat: position.coords.latitude,
             lng: position.coords.longitude
-          });
+          };
+
+          setUserLocation((currentLocation) =>
+            hasMeaningfulLocationChange(currentLocation, nextLocation) ? nextLocation : currentLocation
+          );
         },
         (error) => {
           console.error("Error watching location:", error);
-          if (!userLocation) {
-            setUserLocation({ lat: 9.03, lng: 38.74 });
-          }
+          setUserLocation((currentLocation) => currentLocation ?? { lat: 9.03, lng: 38.74 });
         },
         { enableHighAccuracy: true }
       );
@@ -99,7 +114,21 @@ const DriverDashboard = () => {
     const loadFacilities = async () => {
       try {
         const response = await getParkingLocations(['Verified', 'Full']);
-        setFacilities(response.facilities as ParkingLocation[]);
+        const nextFacilities = response.facilities as ParkingLocation[];
+        const snapshot = JSON.stringify(
+          nextFacilities.map((facility) => ({
+            facilityId: facility.facilityId,
+            status: facility.status,
+            availableSpaces: facility.availableSpaces,
+            pricePerHour: facility.pricePerHour,
+            totalSpaces: facility.totalSpaces,
+          }))
+        );
+
+        if (snapshot !== lastFacilitiesSnapshotRef.current) {
+          lastFacilitiesSnapshotRef.current = snapshot;
+          setFacilities(nextFacilities);
+        }
       } catch (error) {
         console.error('Failed to load parking locations:', error);
       } finally {
@@ -119,7 +148,7 @@ const DriverDashboard = () => {
   useEffect(() => {
     const performRanking = async () => {
       if (userLocation && facilities.length > 0) {
-        setRanking(true);
+        setRanking(scoredFacilities.length === 0);
         const ranked = await rankParkingFacilities(userLocation.lat, userLocation.lng, facilities);
         setScoredFacilities(ranked);
         setRanking(false);
@@ -152,6 +181,7 @@ const DriverDashboard = () => {
     });
 
   const visibleAvailableSpots = filteredFacilities.reduce((sum, facility) => sum + facility.availableSpaces, 0);
+  const showLoadingState = loading || (ranking && scoredFacilities.length === 0);
 
   return (
     <div className="space-y-8">
@@ -240,7 +270,7 @@ const DriverDashboard = () => {
       <div className="grid lg:grid-cols-3 gap-8">
         {/* List View */}
         <div className="lg:col-span-2 space-y-6">
-          {loading || ranking ? (
+          {showLoadingState ? (
             <div className="space-y-6">
               {[1, 2, 3].map(i => (
                 <div key={i} className="bg-white p-6 rounded-[2rem] border border-gray-100 animate-pulse space-y-4">
