@@ -19,6 +19,8 @@ export interface ScoredParkingLocation extends ParkingLocation {
   recommendationReason: string;
 }
 
+const clampScore = (score: number) => Math.min(10, Math.max(0, score));
+
 export async function rankParkingFacilities(
   userLat: number,
   userLong: number,
@@ -46,7 +48,7 @@ export async function rankParkingFacilities(
 
     Return a JSON array of objects, each containing:
     - facilityId: string
-    - score: number (0 to 100, where 100 is the best)
+    - score: number (0 to 10, where 10 is the best)
     - recommendationReason: string (a short, catchy reason why this is a good choice)
 
     Sort the array by score in descending order.
@@ -67,7 +69,7 @@ export async function rankParkingFacilities(
       const result = results.find((r: any) => r.facilityId === f.facilityId);
       return {
         ...f,
-        score: result?.score || 0,
+        score: clampScore(Number(result?.score) || 0),
         recommendationReason: result?.recommendationReason || "Good option nearby."
       };
     }).sort((a, b) => b.score - a.score);
@@ -79,7 +81,7 @@ export async function rankParkingFacilities(
       const dist = Math.sqrt(Math.pow(f.latitude - userLat, 2) + Math.pow(f.longitude - userLong, 2));
       return {
         ...f,
-        score: 100 - (dist * 1000), // Very crude distance score
+        score: clampScore(10 - (dist * 100)),
         recommendationReason: "Recommended based on distance."
       };
     }).sort((a, b) => b.score - a.score);
