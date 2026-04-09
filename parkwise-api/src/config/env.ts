@@ -28,8 +28,8 @@ export const env = {
   },
   oauth: {
     google: {
-      clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
-      clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
+      clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || '',
     },
     facebook: {
       clientId: process.env.FACEBOOK_OAUTH_CLIENT_ID || '',
