@@ -70,7 +70,7 @@ const Navbar = ({ user, role, onLogout }: { user: AppUser | null, role: string |
                 <Car className="h-6 w-6 text-white" />
               </div>
               <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-orange-600 to-amber-600 hidden sm:block">
-                ParkWise
+                Park Wise
               </span>
             </Link>
           </div>
