@@ -1,7 +1,7 @@
 import React, { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { rankParkingFacilities, ParkingLocation, ScoredParkingLocation } from '../lib/gemini';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapPin, Navigation, Star, Info, Filter, Search, Zap, Clock, CreditCard, Map as MapIcon } from 'lucide-react';
+import { MapPin, Navigation, Star, Info, Filter, Search, Zap, Clock, CreditCard, Map as MapIcon, XCircle, Route } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet-routing-machine';
@@ -28,6 +28,17 @@ const MapUpdater = ({ center }: { center: [number, number] }) => {
   useEffect(() => {
     map.setView(center, map.getZoom());
   }, [center, map]);
+  return null;
+};
+
+const MapResizer = ({ trigger }: { trigger: string }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    const frame = window.setTimeout(() => map.invalidateSize(), 250);
+    return () => window.clearTimeout(frame);
+  }, [map, trigger]);
+
   return null;
 };
 
@@ -182,6 +193,12 @@ const DriverDashboard = () => {
 
   const visibleAvailableSpots = filteredFacilities.reduce((sum, facility) => sum + facility.availableSpaces, 0);
   const showLoadingState = loading || (ranking && scoredFacilities.length === 0);
+  const isNavigating = Boolean(destination);
+  const destinationFacility = destination
+    ? scoredFacilities.find(
+        (facility) => facility.latitude === destination.lat && facility.longitude === destination.lng
+      ) || null
+    : null;
 
   return (
     <div className="space-y-8">
@@ -267,9 +284,9 @@ const DriverDashboard = () => {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
+      <div className={`grid gap-8 ${isNavigating ? 'xl:grid-cols-5' : 'lg:grid-cols-3'}`}>
         {/* List View */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className={`${isNavigating ? 'xl:col-span-2' : 'lg:col-span-2'} space-y-6`}>
           {showLoadingState ? (
             <div className="space-y-6">
               {[1, 2, 3].map(i => (
@@ -363,7 +380,39 @@ const DriverDashboard = () => {
 
         {/* Real Map View */}
         <div className="space-y-8">
-          <div className="bg-white rounded-[2.5rem] aspect-square relative overflow-hidden shadow-xl border-4 border-white z-0">
+          <motion.div
+            layout
+            transition={{ type: 'spring', stiffness: 160, damping: 20 }}
+            className={`bg-white rounded-[2.5rem] relative overflow-hidden shadow-xl border-4 border-white z-0 ${
+              isNavigating ? 'min-h-[28rem] lg:min-h-[38rem] xl:col-span-3' : 'aspect-square'
+            }`}
+          >
+            {isNavigating && (
+              <div className="absolute left-5 right-5 top-5 z-[500] flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="bg-white/95 backdrop-blur px-5 py-4 rounded-2xl border border-orange-100 shadow-lg max-w-xl">
+                  <div className="flex items-center gap-2 text-orange-600 text-sm font-black uppercase tracking-[0.18em]">
+                    <Route className="h-4 w-4" />
+                    <span>Navigation Mode</span>
+                  </div>
+                  <p className="mt-2 text-lg font-black text-gray-900">
+                    {destinationFacility?.facilityName || 'Selected destination'}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {destinationFacility?.address || 'Following the active route on the live map.'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setDestination(null)}
+                  className="self-start md:self-auto inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-gray-900 text-white font-bold shadow-lg hover:bg-black transition-all"
+                >
+                  <XCircle className="h-4 w-4" />
+                  <span>Stop Navigation</span>
+                </button>
+              </div>
+            )}
+
             {userLocation && (
               <MapContainer 
                 center={[userLocation.lat, userLocation.lng]} 
@@ -376,6 +425,7 @@ const DriverDashboard = () => {
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 />
                 <MapUpdater center={[userLocation.lat, userLocation.lng]} />
+                <MapResizer trigger={isNavigating ? 'expanded' : 'default'} />
                 <Routing userLocation={userLocation} destination={destination} />
                 
                 {/* User Location Marker */}
@@ -415,7 +465,7 @@ const DriverDashboard = () => {
                 </div>
               </div>
             )}
-          </div>
+          </motion.div>
 
           <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-6">
             <h4 className="text-lg font-bold text-gray-900 flex items-center space-x-2">
@@ -423,6 +473,16 @@ const DriverDashboard = () => {
               <span>Quick Tips</span>
             </h4>
             <div className="space-y-4">
+              {isNavigating && (
+                <div className="flex items-start space-x-3">
+                  <div className="bg-gray-900 p-2 rounded-lg mt-1">
+                    <Navigation className="h-4 w-4 text-white" />
+                  </div>
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    Navigation is active. Use the larger map to track the route, then press <span className="font-bold text-gray-900">Stop Navigation</span> when you want to return to browsing.
+                  </p>
+                </div>
+              )}
               <div className="flex items-start space-x-3">
                 <div className="bg-orange-100 p-2 rounded-lg mt-1">
                   <Clock className="h-4 w-4 text-orange-600" />
