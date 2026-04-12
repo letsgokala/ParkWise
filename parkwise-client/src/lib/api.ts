@@ -28,6 +28,24 @@ export interface ParkingAdminRecord {
   facilityID: string | null;
 }
 
+export interface DriverFavorite {
+  facilityId: string;
+  createdAt: string;
+  notifyOnAvailability: boolean;
+  notifyOnPriceDrop: boolean;
+  facility: ParkingLocation;
+}
+
+export interface DriverSmartAlert {
+  facilityId: string;
+  facilityName: string;
+  type: 'availability' | 'price-drop';
+  message: string;
+  availableSpaces: number;
+  pricePerHour: number;
+  triggeredAt: string;
+}
+
 export interface SysAdminUser {
   uid: string;
   email: string;
@@ -182,5 +200,32 @@ export const assignAdminToFacility = async (adminId: string, facilityId: string)
   return apiFetch<void>('/sysadmin/assign-admin', {
     method: 'POST',
     body: JSON.stringify({ adminId: adminId || null, facilityId }),
+  }, true);
+};
+
+export const getDriverFavorites = async () => {
+  return apiFetch<{ favorites: DriverFavorite[]; alerts: DriverSmartAlert[] }>('/driver/favorites', {}, true);
+};
+
+export const createDriverFavorite = async (facilityId: string) => {
+  return apiFetch<{ favorite: DriverFavorite }>('/driver/favorites', {
+    method: 'POST',
+    body: JSON.stringify({ facilityId }),
+  }, true);
+};
+
+export const deleteDriverFavorite = async (facilityId: string) => {
+  return apiFetch<void>(`/driver/favorites/${facilityId}`, {
+    method: 'DELETE',
+  }, true);
+};
+
+export const updateDriverFavoriteAlerts = async (
+  facilityId: string,
+  payload: { notifyOnAvailability?: boolean; notifyOnPriceDrop?: boolean }
+) => {
+  return apiFetch<{ favorite: DriverFavorite }>(`/driver/favorites/${facilityId}/alerts`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
   }, true);
 };
