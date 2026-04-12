@@ -1,4 +1,5 @@
-import { AppUserDto, ParkingAdminRecordDto, ParkingLocationDto, SysAdminUserDto } from '../types/api.types';
+import { AppUserDto, DriverFavoriteDto, ParkingAdminRecordDto, ParkingLocationDto, SysAdminUserDto } from '../types/api.types';
+import { DriverFavoriteEntity } from '../entities/DriverFavorite.entity';
 import { ParkingAdminEntity } from '../entities/ParkingAdmin.entity';
 import { ParkingLocationEntity } from '../entities/ParkingLocation.entity';
 import { UserEntity } from '../entities/User.entity';
@@ -21,6 +22,12 @@ export const toParkingLocationDto = (facility: ParkingLocationEntity): ParkingLo
   pricePerHour: Number(facility.pricePerHour),
   status: facility.status,
   createdAt: facility.createdAt,
+});
+
+export const toDriverFavoriteDto = (favorite: DriverFavoriteEntity): DriverFavoriteDto => ({
+  facilityId: favorite.facilityId,
+  createdAt: favorite.createdAt,
+  facility: toParkingLocationDto(favorite.facility),
 });
 
 export const toSysAdminUserDto = (user: UserEntity): SysAdminUserDto => ({

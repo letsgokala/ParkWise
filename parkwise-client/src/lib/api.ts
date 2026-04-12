@@ -28,6 +28,12 @@ export interface ParkingAdminRecord {
   facilityID: string | null;
 }
 
+export interface DriverFavorite {
+  facilityId: string;
+  createdAt: string;
+  facility: ParkingLocation;
+}
+
 export interface SysAdminUser {
   uid: string;
   email: string;
@@ -182,5 +188,22 @@ export const assignAdminToFacility = async (adminId: string, facilityId: string)
   return apiFetch<void>('/sysadmin/assign-admin', {
     method: 'POST',
     body: JSON.stringify({ adminId: adminId || null, facilityId }),
+  }, true);
+};
+
+export const getDriverFavorites = async () => {
+  return apiFetch<{ favorites: DriverFavorite[] }>('/driver/favorites', {}, true);
+};
+
+export const createDriverFavorite = async (facilityId: string) => {
+  return apiFetch<{ favorite: DriverFavorite }>('/driver/favorites', {
+    method: 'POST',
+    body: JSON.stringify({ facilityId }),
+  }, true);
+};
+
+export const deleteDriverFavorite = async (facilityId: string) => {
+  return apiFetch<void>(`/driver/favorites/${facilityId}`, {
+    method: 'DELETE',
   }, true);
 };

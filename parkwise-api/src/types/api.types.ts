@@ -34,6 +34,12 @@ export interface ParkingAdminRecordDto {
   facilityID: string | null;
 }
 
+export interface DriverFavoriteDto {
+  facilityId: string;
+  createdAt: Date;
+  facility: ParkingLocationDto;
+}
+
 export interface SysAdminUserDto {
   uid: string;
   email: string;
@@ -78,5 +84,9 @@ export interface CreateFacilityInput {
 
 export interface AssignAdminInput {
   adminId?: string | null;
+  facilityId?: string;
+}
+
+export interface CreateDriverFavoriteInput {
   facilityId?: string;
 }
