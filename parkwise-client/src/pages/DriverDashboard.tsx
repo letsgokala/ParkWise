@@ -301,7 +301,7 @@ const DriverDashboard = () => {
       layout
       transition={{ type: 'spring', stiffness: 160, damping: 20 }}
       className={`bg-white rounded-[2.5rem] relative overflow-hidden shadow-xl border-4 border-white z-0 ${
-        isNavigating ? 'w-full min-h-[34rem] lg:min-h-[44rem]' : 'aspect-square'
+        isNavigating ? 'w-full h-[34rem] lg:h-[44rem]' : 'aspect-square'
       }`}
     >
       {isNavigating && (
