@@ -1,4 +1,4 @@
-import React, { ErrorInfo, ReactNode } from 'react';
+import { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;
@@ -12,17 +12,17 @@ interface State {
   showDetails: boolean;
 }
 
-class ErrorBoundary extends React.Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-      errorInfo: null,
-      copied: false,
-      showDetails: false,
-    };
-  }
+class ErrorBoundary extends Component<Props, State> {
+  declare props: Readonly<Props>;
+  declare setState: Component<Props, State>['setState'];
+
+  state: State = {
+    hasError: false,
+    error: null,
+    errorInfo: null,
+    copied: false,
+    showDetails: false,
+  };
 
   static getDerivedStateFromError(error: Error): State {
     return {
