@@ -1,7 +1,7 @@
 import React, { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { rankParkingFacilities, ParkingLocation, ScoredParkingLocation } from '../lib/gemini';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapPin, Navigation, Star, Info, Filter, Search, Zap, Clock, CreditCard, Map as MapIcon } from 'lucide-react';
+import { MapPin, Navigation, Star, Info, Filter, Search, Zap, Clock, CreditCard, Map as MapIcon, XCircle, Route } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet-routing-machine';
@@ -28,6 +28,17 @@ const MapUpdater = ({ center }: { center: [number, number] }) => {
   useEffect(() => {
     map.setView(center, map.getZoom());
   }, [center, map]);
+  return null;
+};
+
+const MapResizer = ({ trigger }: { trigger: string }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    const frame = window.setTimeout(() => map.invalidateSize(), 250);
+    return () => window.clearTimeout(frame);
+  }, [map, trigger]);
+
   return null;
 };
 
@@ -194,6 +205,232 @@ const DriverDashboard = () => {
 
   const visibleAvailableSpots = filteredFacilities.reduce((sum, facility) => sum + facility.availableSpaces, 0);
   const showLoadingState = loading || (ranking && scoredFacilities.length === 0);
+  const isNavigating = Boolean(destination);
+  const destinationFacility = destination
+    ? scoredFacilities.find(
+        (facility) => facility.latitude === destination.lat && facility.longitude === destination.lng
+      ) || null
+    : null;
+  const startNavigation = (facility: { latitude: number; longitude: number }) => {
+    setDestination({ lat: facility.latitude, lng: facility.longitude });
+  };
+
+  const listView = (
+    <div className="space-y-6">
+      {showLoadingState ? (
+        <div className="space-y-6">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="bg-white p-6 rounded-[2rem] border border-gray-100 animate-pulse space-y-4">
+              <div className="h-6 w-1/3 bg-gray-100 rounded-lg" />
+              <div className="h-4 w-2/3 bg-gray-50 rounded-lg" />
+              <div className="flex space-x-4">
+                <div className="h-10 w-24 bg-gray-50 rounded-xl" />
+                <div className="h-10 w-24 bg-gray-50 rounded-xl" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : filteredFacilities.length === 0 ? (
+        <div className="bg-white p-12 rounded-[2.5rem] border border-dashed border-gray-200 text-center space-y-4">
+          <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto">
+            <Search className="h-8 w-8 text-gray-400" />
+          </div>
+          <p className="text-gray-500 font-medium">No parking facilities found matching your criteria.</p>
+        </div>
+      ) : (
+        <div className="grid gap-6">
+          <AnimatePresence mode="popLayout">
+            {filteredFacilities.map((facility, index) => (
+              <motion.div
+                key={facility.facilityId}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ delay: index * 0.05 }}
+                className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-xl hover:border-orange-100 transition-all group relative overflow-hidden"
+              >
+                <div className="absolute top-6 right-6 flex items-center space-x-2">
+                  {index === 0 && (
+                    <div className="bg-orange-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center space-x-1 shadow-lg shadow-orange-200">
+                      <Zap className="h-3 w-3" />
+                      <span>Best Match</span>
+                    </div>
+                  )}
+                  <div className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-xl text-sm font-black border border-amber-100 flex items-center space-x-1 shadow-sm">
+                    <Star className="h-4 w-4 fill-amber-600" />
+                    <span>{facility.score.toFixed(1)}/10</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pr-32 md:pr-0">
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <h3 className="text-xl font-bold text-gray-900">{facility.facilityName}</h3>
+                      <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${facility.availableSpaces > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                        {facility.availableSpaces > 0 ? 'Available' : 'Full'}
+                      </div>
+                    </div>
+                    <div className="flex items-center text-gray-500 text-sm font-medium">
+                      <MapPin className="h-4 w-4 mr-1 text-orange-600" />
+                      <span>{facility.address}</span>
+                    </div>
+                    <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 flex items-start space-x-2">
+                      <Zap className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm text-orange-800 font-medium leading-tight">
+                        {facility.recommendationReason}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-row md:flex-col items-center md:items-end justify-between gap-4">
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-orange-600">{facility.pricePerHour} <span className="text-sm font-bold text-gray-400">ETB/hr</span></p>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{facility.availableSpaces} spots left</p>
+                    </div>
+                    <button
+                      onClick={() => startNavigation(facility)}
+                      className={`px-6 py-3 rounded-xl font-bold text-sm flex items-center space-x-2 transition-all shadow-md ${
+                        destination?.lat === facility.latitude && destination?.lng === facility.longitude
+                          ? 'bg-orange-100 text-orange-600 shadow-orange-50'
+                          : 'bg-orange-600 text-white hover:bg-orange-700 shadow-orange-100'
+                      }`}
+                    >
+                      <Navigation className={`h-4 w-4 ${destination?.lat === facility.latitude && destination?.lng === facility.longitude ? 'animate-pulse' : ''}`} />
+                      <span>{destination?.lat === facility.latitude && destination?.lng === facility.longitude ? 'Navigating...' : 'Navigate'}</span>
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+    </div>
+  );
+
+  const mapView = (
+    <motion.div
+      layout
+      transition={{ type: 'spring', stiffness: 160, damping: 20 }}
+      className={`bg-white rounded-[2.5rem] relative overflow-hidden shadow-xl border-4 border-white z-0 ${
+        isNavigating ? 'w-full h-[34rem] lg:h-[44rem]' : 'aspect-square'
+      }`}
+    >
+      {isNavigating && (
+        <div className="absolute left-5 right-5 top-5 z-[500] flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="bg-white/95 backdrop-blur px-5 py-4 rounded-2xl border border-orange-100 shadow-lg max-w-xl">
+            <div className="flex items-center gap-2 text-orange-600 text-sm font-black uppercase tracking-[0.18em]">
+              <Route className="h-4 w-4" />
+              <span>Navigation Mode</span>
+            </div>
+            <p className="mt-2 text-lg font-black text-gray-900">
+              {destinationFacility?.facilityName || 'Selected destination'}
+            </p>
+            <p className="text-sm text-gray-500">
+              {destinationFacility?.address || 'Following the active route on the live map.'}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setDestination(null)}
+            className="self-start md:self-auto inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-gray-900 text-white font-bold shadow-lg hover:bg-black transition-all"
+          >
+            <XCircle className="h-4 w-4" />
+            <span>Stop Navigation</span>
+          </button>
+        </div>
+      )}
+
+      {userLocation && (
+        <MapContainer
+          center={[userLocation.lat, userLocation.lng]}
+          zoom={14}
+          style={{ height: '100%', width: '100%' }}
+          scrollWheelZoom={false}
+        >
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          />
+          <MapUpdater center={[userLocation.lat, userLocation.lng]} />
+          <MapResizer trigger={isNavigating ? 'expanded' : 'default'} />
+          <Routing userLocation={userLocation} destination={destination} />
+
+          <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
+            <Popup>You are here</Popup>
+          </Marker>
+
+          {filteredFacilities.map((facility) => (
+            <Marker
+              key={facility.facilityId}
+              position={[facility.latitude, facility.longitude]}
+              icon={parkingIcon}
+            >
+              <Popup>
+                <div className="p-2 space-y-1">
+                  <p className="font-bold text-gray-900">{facility.facilityName}</p>
+                  <p className="text-xs text-orange-600 font-bold">{facility.pricePerHour} ETB/hr</p>
+                  <p className="text-[10px] text-gray-500">{facility.availableSpaces} spots available</p>
+                  <button
+                    onClick={() => startNavigation(facility)}
+                    className="w-full mt-2 bg-orange-600 text-white py-1.5 px-3 rounded-lg text-[10px] font-bold hover:bg-orange-700 transition-all"
+                  >
+                    Navigate Here
+                  </button>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      )}
+      {!userLocation && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
+          <div className="text-center space-y-2">
+            <MapIcon className="h-12 w-12 text-orange-600 mx-auto animate-pulse" />
+            <p className="font-bold text-gray-500">Loading Map...</p>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+
+  const quickTipsCard = (
+    <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-6">
+      <h4 className="text-lg font-bold text-gray-900 flex items-center space-x-2">
+        <Info className="h-5 w-5 text-orange-600" />
+        <span>Quick Tips</span>
+      </h4>
+      <div className="space-y-4">
+        {isNavigating && (
+          <div className="flex items-start space-x-3">
+            <div className="bg-gray-900 p-2 rounded-lg mt-1">
+              <Navigation className="h-4 w-4 text-white" />
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Navigation is active. Use the larger map to track the route, then press <span className="font-bold text-gray-900">Stop Navigation</span> when you want to return to browsing.
+            </p>
+          </div>
+        )}
+        <div className="flex items-start space-x-3">
+          <div className="bg-orange-100 p-2 rounded-lg mt-1">
+            <Clock className="h-4 w-4 text-orange-600" />
+          </div>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Peak hours are between 8:00 AM and 10:00 AM. Prices may vary.
+          </p>
+        </div>
+        <div className="flex items-start space-x-3">
+          <div className="bg-purple-100 p-2 rounded-lg mt-1">
+            <CreditCard className="h-4 w-4 text-purple-600" />
+          </div>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Most lots accept mobile payments via Telebirr or CBE Birr.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-8">
@@ -282,182 +519,29 @@ const DriverDashboard = () => {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
-        {/* List View */}
-        <div className="lg:col-span-2 space-y-6">
-          {showLoadingState ? (
-            <div className="space-y-6">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="bg-white p-6 rounded-[2rem] border border-gray-100 animate-pulse space-y-4">
-                  <div className="h-6 w-1/3 bg-gray-100 rounded-lg" />
-                  <div className="h-4 w-2/3 bg-gray-50 rounded-lg" />
-                  <div className="flex space-x-4">
-                    <div className="h-10 w-24 bg-gray-50 rounded-xl" />
-                    <div className="h-10 w-24 bg-gray-50 rounded-xl" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : filteredFacilities.length === 0 ? (
-            <div className="bg-white p-12 rounded-[2.5rem] border border-dashed border-gray-200 text-center space-y-4">
-              <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto">
-                <Search className="h-8 w-8 text-gray-400" />
-              </div>
-              <p className="text-gray-500 font-medium">No parking facilities found matching your criteria.</p>
-            </div>
-          ) : (
-            <div className="grid gap-6">
-              <AnimatePresence mode="popLayout">
-                {filteredFacilities.map((facility, index) => (
-                  <motion.div
-                    key={facility.facilityId}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-xl hover:border-orange-100 transition-all group relative overflow-hidden"
-                  >
-                    {/* Rating & Badge Layout */}
-                    <div className="absolute top-6 right-6 flex items-center space-x-2">
-                      {index === 0 && (
-                        <div className="bg-orange-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center space-x-1 shadow-lg shadow-orange-200">
-                          <Zap className="h-3 w-3" />
-                          <span>Best Match</span>
-                        </div>
-                      )}
-                      <div className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-xl text-sm font-black border border-amber-100 flex items-center space-x-1 shadow-sm">
-                        <Star className="h-4 w-4 fill-amber-600" />
-                        <span>{facility.score.toFixed(1)}/10</span>
-                      </div>
-                    </div>
-                    
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pr-32 md:pr-0">
-                      <div className="space-y-3">
-                        <div className="flex items-center space-x-2">
-                          <h3 className="text-xl font-bold text-gray-900">{facility.facilityName}</h3>
-                          <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${facility.availableSpaces > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                            {facility.availableSpaces > 0 ? 'Available' : 'Full'}
-                          </div>
-                        </div>
-                        <div className="flex items-center text-gray-500 text-sm font-medium">
-                          <MapPin className="h-4 w-4 mr-1 text-orange-600" />
-                          <span>{facility.address}</span>
-                        </div>
-                        <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 flex items-start space-x-2">
-                          <Zap className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
-                          <p className="text-sm text-orange-800 font-medium leading-tight">
-                            {facility.recommendationReason}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-row md:flex-col items-center md:items-end justify-between gap-4">
-                        <div className="text-right">
-                          <p className="text-2xl font-black text-orange-600">{facility.pricePerHour} <span className="text-sm font-bold text-gray-400">ETB/hr</span></p>
-                          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{facility.availableSpaces} spots left</p>
-                        </div>
-                        <button 
-                          onClick={() => setDestination({ lat: facility.latitude, lng: facility.longitude })}
-                          className={`px-6 py-3 rounded-xl font-bold text-sm flex items-center space-x-2 transition-all shadow-md ${
-                            destination?.lat === facility.latitude && destination?.lng === facility.longitude
-                              ? 'bg-orange-100 text-orange-600 shadow-orange-50'
-                              : 'bg-orange-600 text-white hover:bg-orange-700 shadow-orange-100'
-                          }`}
-                        >
-                          <Navigation className={`h-4 w-4 ${destination?.lat === facility.latitude && destination?.lng === facility.longitude ? 'animate-pulse' : ''}`} />
-                          <span>{destination?.lat === facility.latitude && destination?.lng === facility.longitude ? 'Navigating...' : 'Navigate'}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
-        </div>
-
-        {/* Real Map View */}
+      {isNavigating ? (
         <div className="space-y-8">
-          <div className="bg-white rounded-[2.5rem] aspect-square relative overflow-hidden shadow-xl border-4 border-white z-0">
-            {userLocation && (
-              <MapContainer 
-                center={[userLocation.lat, userLocation.lng]} 
-                zoom={14} 
-                style={{ height: '100%', width: '100%' }}
-                scrollWheelZoom={false}
-              >
-                <TileLayer
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                />
-                <MapUpdater center={[userLocation.lat, userLocation.lng]} />
-                <Routing userLocation={userLocation} destination={destination} />
-                
-                {/* User Location Marker */}
-                <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
-                  <Popup>You are here</Popup>
-                </Marker>
-
-                {/* Parking Markers */}
-                {filteredFacilities.map((f) => (
-                  <Marker 
-                    key={f.facilityId} 
-                    position={[f.latitude, f.longitude]}
-                    icon={parkingIcon}
-                  >
-                    <Popup>
-                      <div className="p-2 space-y-1">
-                        <p className="font-bold text-gray-900">{f.facilityName}</p>
-                        <p className="text-xs text-orange-600 font-bold">{f.pricePerHour} ETB/hr</p>
-                        <p className="text-[10px] text-gray-500">{f.availableSpaces} spots available</p>
-                        <button 
-                          onClick={() => setDestination({ lat: f.latitude, lng: f.longitude })}
-                          className="w-full mt-2 bg-orange-600 text-white py-1.5 px-3 rounded-lg text-[10px] font-bold hover:bg-orange-700 transition-all"
-                        >
-                          Navigate Here
-                        </button>
-                      </div>
-                    </Popup>
-                  </Marker>
-                ))}
-              </MapContainer>
-            )}
-            {!userLocation && (
-              <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
-                <div className="text-center space-y-2">
-                  <MapIcon className="h-12 w-12 text-orange-600 mx-auto animate-pulse" />
-                  <p className="font-bold text-gray-500">Loading Map...</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-6">
-            <h4 className="text-lg font-bold text-gray-900 flex items-center space-x-2">
-              <Info className="h-5 w-5 text-orange-600" />
-              <span>Quick Tips</span>
-            </h4>
-            <div className="space-y-4">
-              <div className="flex items-start space-x-3">
-                <div className="bg-orange-100 p-2 rounded-lg mt-1">
-                  <Clock className="h-4 w-4 text-orange-600" />
-                </div>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  Peak hours are between 8:00 AM and 10:00 AM. Prices may vary.
-                </p>
-              </div>
-              <div className="flex items-start space-x-3">
-                <div className="bg-purple-100 p-2 rounded-lg mt-1">
-                  <CreditCard className="h-4 w-4 text-purple-600" />
-                </div>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  Most lots accept mobile payments via Telebirr or CBE Birr.
-                </p>
-              </div>
+          {mapView}
+          <div className="grid gap-8 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              {listView}
+            </div>
+            <div>
+              {quickTipsCard}
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="grid gap-8 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            {listView}
+          </div>
+          <div className="space-y-8">
+            {mapView}
+            {quickTipsCard}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
