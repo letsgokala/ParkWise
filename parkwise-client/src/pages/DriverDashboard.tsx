@@ -829,11 +829,10 @@ const DriverDashboard = () => {
         <div>
           <h1 className="text-3xl font-extrabold text-gray-900">Find Parking</h1>
           <p className="text-gray-500">AI-powered recommendations near you</p>
-          {!storedUser && (
           {ranking && !loading && (
             <p className="mt-2 text-sm font-medium text-orange-600">Refreshing recommendations...</p>
           )}
-          {!getStoredUser() && (
+          {!storedUser && (
             <div className="mt-2 bg-orange-50 text-orange-700 px-4 py-2 rounded-xl text-sm font-medium border border-orange-100 inline-block">
               Guest Mode: Sign in to save favorite spots and history.
             </div>
