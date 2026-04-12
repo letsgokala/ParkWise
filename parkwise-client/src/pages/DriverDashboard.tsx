@@ -144,7 +144,7 @@ const DriverDashboard = () => {
     let watchId: number;
 
     if (navigator.geolocation) {
-      watchId = navigator.geolocation.watchPosition(
+      navigator.geolocation.getCurrentPosition(
         (position) => {
           const nextLocation = {
             lat: position.coords.latitude,
@@ -161,9 +161,15 @@ const DriverDashboard = () => {
         },
         { enableHighAccuracy: true }
       );
+    } else {
+      setUserLocation({ lat: 9.03, lng: 38.74 });
     }
 
-    const loadFacilities = async () => {
+    const loadFacilities = async (showLoader = false) => {
+      if (showLoader) {
+        setLoading(true);
+      }
+
       try {
         const response = await getParkingLocations(['Verified', 'Full']);
         const nextFacilities = response.facilities as ParkingLocation[];
@@ -184,16 +190,19 @@ const DriverDashboard = () => {
       } catch (error) {
         console.error('Failed to load parking locations:', error);
       } finally {
-        setLoading(false);
+        if (showLoader) {
+          setLoading(false);
+        }
       }
     };
 
-    loadFacilities();
-    const intervalId = window.setInterval(loadFacilities, 10000);
+    void loadFacilities(true);
+    const intervalId = window.setInterval(() => {
+      void loadFacilities();
+    }, 10000);
 
     return () => {
       window.clearInterval(intervalId);
-      if (watchId) navigator.geolocation.clearWatch(watchId);
     };
   }, []);
 
@@ -237,15 +246,20 @@ const DriverDashboard = () => {
   useEffect(() => {
     const performRanking = async () => {
       if (userLocation && facilities.length > 0) {
-        setRanking(scoredFacilities.length === 0);
-        const ranked = await rankParkingFacilities(userLocation.lat, userLocation.lng, facilities);
-        setScoredFacilities(ranked);
-        setRanking(false);
+        setRanking(true);
+        try {
+          const ranked = await rankParkingFacilities(userLocation.lat, userLocation.lng, facilities);
+          setScoredFacilities(ranked);
+        } finally {
+          setRanking(false);
+        }
+      } else if (!loading && facilities.length === 0) {
+        setScoredFacilities([]);
       }
     };
 
-    performRanking();
-  }, [userLocation, facilities]);
+    void performRanking();
+  }, [userLocation, facilities, loading]);
 
   const normalizedSearchTerm = deferredSearchTerm.trim().toLowerCase();
 
@@ -650,7 +664,7 @@ const DriverDashboard = () => {
       layout
       transition={{ type: 'spring', stiffness: 160, damping: 20 }}
       className={`bg-white rounded-[2.5rem] relative overflow-hidden shadow-xl border-4 border-white z-0 ${
-        isNavigating ? 'w-full min-h-[34rem] lg:min-h-[44rem]' : 'aspect-square'
+        isNavigating ? 'w-full h-[34rem] lg:h-[44rem]' : 'aspect-square'
       }`}
     >
       {isNavigating && (
@@ -816,6 +830,10 @@ const DriverDashboard = () => {
           <h1 className="text-3xl font-extrabold text-gray-900">Find Parking</h1>
           <p className="text-gray-500">AI-powered recommendations near you</p>
           {!storedUser && (
+          {ranking && !loading && (
+            <p className="mt-2 text-sm font-medium text-orange-600">Refreshing recommendations...</p>
+          )}
+          {!getStoredUser() && (
             <div className="mt-2 bg-orange-50 text-orange-700 px-4 py-2 rounded-xl text-sm font-medium border border-orange-100 inline-block">
               Guest Mode: Sign in to save favorite spots and history.
             </div>

@@ -4,8 +4,10 @@ import { fileURLToPath } from 'url';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const rootEnvPath = path.resolve(currentDir, '../../../.env');
+const apiEnvPath = path.resolve(currentDir, '../../.env');
 
 dotenv.config({ path: rootEnvPath });
+dotenv.config({ path: apiEnvPath, override: false });
 
 export const env = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',

@@ -1,6 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const getAiClient = () => {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return null;
+  }
+
+  return new GoogleGenAI({ apiKey });
+};
 
 export interface ParkingLocation {
   facilityId: string;
@@ -27,6 +35,8 @@ export async function rankParkingFacilities(
   facilities: ParkingLocation[]
 ): Promise<ScoredParkingLocation[]> {
   if (facilities.length === 0) return [];
+
+  const ai = getAiClient();
 
   const prompt = `
     You are an AI parking recommendation engine for ParkWise.
@@ -55,6 +65,10 @@ export async function rankParkingFacilities(
   `;
 
   try {
+    if (!ai) {
+      throw new Error("Missing VITE_GEMINI_API_KEY");
+    }
+
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
