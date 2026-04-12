@@ -15,6 +15,7 @@ import {
   XCircle,
   Route,
   Heart,
+  Bell,
 } from 'lucide-react';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -23,9 +24,11 @@ import {
   createDriverFavorite,
   deleteDriverFavorite,
   DriverFavorite,
+  DriverSmartAlert,
   getDriverFavorites,
   getParkingLocations,
   getStoredUser,
+  updateDriverFavoriteAlerts,
 } from '../lib/api';
 
 const userIcon = L.divIcon({
@@ -108,10 +111,12 @@ const DriverDashboard = () => {
   const [facilities, setFacilities] = useState<ParkingLocation[]>([]);
   const [scoredFacilities, setScoredFacilities] = useState<ScoredParkingLocation[]>([]);
   const [favorites, setFavorites] = useState<DriverFavorite[]>([]);
+  const [smartAlerts, setSmartAlerts] = useState<DriverSmartAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [ranking, setRanking] = useState(false);
   const [favoritesLoading, setFavoritesLoading] = useState(isDriverSession);
   const [favoritePendingId, setFavoritePendingId] = useState<string | null>(null);
+  const [alertPendingId, setAlertPendingId] = useState<string | null>(null);
   const [favoriteFeedback, setFavoriteFeedback] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [destination, setDestination] = useState<{ lat: number; lng: number } | null>(null);
@@ -199,30 +204,26 @@ const DriverDashboard = () => {
       return;
     }
 
-    let isMounted = true;
-
     const loadFavorites = async () => {
       try {
         const response = await getDriverFavorites();
-        if (isMounted) {
-          setFavorites(response.favorites);
+        setFavorites(response.favorites);
+        if (response.alerts.length > 0) {
+          setSmartAlerts((current) => [...response.alerts, ...current].slice(0, 8));
         }
       } catch (error) {
         console.error('Failed to load driver favorites:', error);
-        if (isMounted) {
-          setFavoriteFeedback('We could not load your saved lots right now.');
-        }
+        setFavoriteFeedback('We could not load your saved lots right now.');
       } finally {
-        if (isMounted) {
-          setFavoritesLoading(false);
-        }
+        setFavoritesLoading(false);
       }
     };
 
     loadFavorites();
+    const intervalId = window.setInterval(loadFavorites, 15000);
 
     return () => {
-      isMounted = false;
+      window.clearInterval(intervalId);
     };
   }, [isDriverSession]);
 
@@ -312,6 +313,91 @@ const DriverDashboard = () => {
     }
   };
 
+  const updateAlertPreference = async (
+    facilityId: string,
+    field: 'notifyOnAvailability' | 'notifyOnPriceDrop',
+    value: boolean
+  ) => {
+    setAlertPendingId(`${facilityId}:${field}`);
+
+    try {
+      const response = await updateDriverFavoriteAlerts(facilityId, { [field]: value });
+      setFavorites((current) =>
+        current.map((favorite) => (favorite.facilityId === facilityId ? response.favorite : favorite))
+      );
+      setFavoriteFeedback(value ? 'Smart alert enabled.' : 'Smart alert paused.');
+    } catch (error) {
+      console.error('Failed to update alert preference:', error);
+      setFavoriteFeedback('We could not update alert preferences right now.');
+    } finally {
+      setAlertPendingId(null);
+    }
+  };
+
+  const alertsCard = isDriverSession ? (
+    <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-500">Smart Alerts</p>
+          <h2 className="mt-2 text-2xl font-black text-gray-900">Favorite Lot Updates</h2>
+          <p className="text-sm text-gray-500">
+            ParkWise watches your saved lots and tells you when spots open up or prices drop.
+          </p>
+        </div>
+        <div className="bg-sky-50 text-sky-600 rounded-2xl px-4 py-3 border border-sky-100 min-w-[92px] text-center">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em]">Recent</p>
+          <p className="text-2xl font-black">{smartAlerts.length}</p>
+        </div>
+      </div>
+
+      {smartAlerts.length > 0 ? (
+        <div className="space-y-3">
+          {smartAlerts.map((alert, index) => {
+            const facility = favoriteFacilities.find((favorite) => favorite.facilityId === alert.facilityId);
+
+            return (
+              <div
+                key={`${alert.facilityId}-${alert.type}-${alert.triggeredAt}-${index}`}
+                className="rounded-[1.75rem] border border-sky-100 bg-sky-50/70 px-5 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="bg-white rounded-2xl p-3 border border-sky-100">
+                    <Bell className="h-5 w-5 text-sky-600" />
+                  </div>
+                  <div>
+                    <p className="font-black text-gray-900">{alert.facilityName}</p>
+                    <p className="text-sm text-gray-600">{alert.message}</p>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-500 mt-2">
+                      {alert.type === 'availability' ? 'Availability Alert' : 'Price Drop Alert'}
+                    </p>
+                  </div>
+                </div>
+                {facility && (
+                  <button
+                    type="button"
+                    onClick={() => startNavigation(facility)}
+                    className="self-start md:self-auto rounded-2xl bg-gray-900 text-white px-4 py-3 font-bold inline-flex items-center gap-2 hover:bg-black transition-all"
+                  >
+                    <Navigation className="h-4 w-4" />
+                    <span>Go Now</span>
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-[2rem] border border-dashed border-gray-200 p-8 text-center bg-gray-50">
+          <Bell className="h-10 w-10 text-sky-500 mx-auto" />
+          <p className="mt-4 text-lg font-bold text-gray-900">No new alerts yet</p>
+          <p className="mt-2 text-sm text-gray-500">
+            Enable alerts on your favorites and we’ll surface changes as soon as we detect them.
+          </p>
+        </div>
+      )}
+    </div>
+  ) : null;
+
   const favoritesCard = isDriverSession ? (
     <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -349,6 +435,58 @@ const DriverDashboard = () => {
                 </div>
                 <Heart className="h-5 w-5 text-rose-500 fill-rose-500 flex-shrink-0" />
               </div>
+              {(() => {
+                const favorite = favorites.find((item) => item.facilityId === facility.facilityId);
+                if (!favorite) return null;
+
+                const availabilityPending = alertPendingId === `${facility.facilityId}:notifyOnAvailability`;
+                const pricePending = alertPendingId === `${facility.facilityId}:notifyOnPriceDrop`;
+
+                return (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <button
+                      type="button"
+                      disabled={availabilityPending}
+                      onClick={() =>
+                        updateAlertPreference(
+                          facility.facilityId,
+                          'notifyOnAvailability',
+                          !favorite.notifyOnAvailability
+                        )
+                      }
+                      className={`rounded-2xl border px-4 py-3 text-left transition-all ${
+                        favorite.notifyOnAvailability
+                          ? 'bg-sky-50 border-sky-100 text-sky-700'
+                          : 'bg-white border-gray-200 text-gray-500'
+                      } ${availabilityPending ? 'opacity-60 cursor-wait' : ''}`}
+                    >
+                      <p className="text-xs font-black uppercase tracking-[0.18em]">Open Spot Alerts</p>
+                      <p className="mt-1 text-sm font-bold">
+                        {favorite.notifyOnAvailability ? 'Enabled' : 'Paused'}
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pricePending}
+                      onClick={() =>
+                        updateAlertPreference(
+                          facility.facilityId,
+                          'notifyOnPriceDrop',
+                          !favorite.notifyOnPriceDrop
+                        )
+                      }
+                      className={`rounded-2xl border px-4 py-3 text-left transition-all ${
+                        favorite.notifyOnPriceDrop
+                          ? 'bg-amber-50 border-amber-100 text-amber-700'
+                          : 'bg-white border-gray-200 text-gray-500'
+                      } ${pricePending ? 'opacity-60 cursor-wait' : ''}`}
+                    >
+                      <p className="text-xs font-black uppercase tracking-[0.18em]">Price Drop Alerts</p>
+                      <p className="mt-1 text-sm font-bold">{favorite.notifyOnPriceDrop ? 'Enabled' : 'Paused'}</p>
+                    </button>
+                  </div>
+                );
+              })()}
               <div className="flex items-center justify-between text-sm font-bold text-gray-600">
                 <span>{facility.availableSpaces} spots left</span>
                 <span>{facility.pricePerHour} ETB/hr</span>
@@ -641,6 +779,16 @@ const DriverDashboard = () => {
             </p>
           </div>
         )}
+        {isDriverSession && (
+          <div className="flex items-start space-x-3">
+            <div className="bg-sky-100 p-2 rounded-lg mt-1">
+              <Bell className="h-4 w-4 text-sky-600" />
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Turn on smart alerts for favorites to catch availability recoveries and price drops sooner.
+            </p>
+          </div>
+        )}
         <div className="flex items-start space-x-3">
           <div className="bg-orange-100 p-2 rounded-lg mt-1">
             <Clock className="h-4 w-4 text-orange-600" />
@@ -766,6 +914,10 @@ const DriverDashboard = () => {
           <p className="mt-2 text-2xl font-black text-gray-900">{isDriverSession ? favorites.length : 0}</p>
         </div>
         <div className="bg-white px-5 py-4 rounded-2xl border border-gray-100 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Recent Alerts</p>
+          <p className="mt-2 text-2xl font-black text-gray-900">{isDriverSession ? smartAlerts.length : 0}</p>
+        </div>
+        <div className="bg-white px-5 py-4 rounded-2xl border border-gray-100 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Sort Mode</p>
           <p className="mt-2 text-lg font-black text-gray-900">
             {sortBy === 'best-match' && 'AI Best Match'}
@@ -776,6 +928,7 @@ const DriverDashboard = () => {
         </div>
       </div>
 
+      {alertsCard}
       {favoritesCard}
 
       {isNavigating ? (

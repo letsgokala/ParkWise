@@ -37,7 +37,19 @@ export interface ParkingAdminRecordDto {
 export interface DriverFavoriteDto {
   facilityId: string;
   createdAt: Date;
+  notifyOnAvailability: boolean;
+  notifyOnPriceDrop: boolean;
   facility: ParkingLocationDto;
+}
+
+export interface DriverSmartAlertDto {
+  facilityId: string;
+  facilityName: string;
+  type: 'availability' | 'price-drop';
+  message: string;
+  availableSpaces: number;
+  pricePerHour: number;
+  triggeredAt: Date;
 }
 
 export interface SysAdminUserDto {
@@ -89,4 +101,9 @@ export interface AssignAdminInput {
 
 export interface CreateDriverFavoriteInput {
   facilityId?: string;
+}
+
+export interface UpdateFavoriteAlertsInput {
+  notifyOnAvailability?: boolean;
+  notifyOnPriceDrop?: boolean;
 }

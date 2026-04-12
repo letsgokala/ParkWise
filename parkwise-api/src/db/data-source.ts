@@ -6,6 +6,7 @@ import { DriverEntity } from '../entities/Driver.entity';
 import { ParkingAdminEntity } from '../entities/ParkingAdmin.entity';
 import { ParkingLocationEntity } from '../entities/ParkingLocation.entity';
 import { UserEntity } from '../entities/User.entity';
+import { DriverFavoriteAlerts1712016000000 } from './migrations/1712016000000-DriverFavoriteAlerts';
 import { DriverFavorites1711929600000 } from './migrations/1711929600000-DriverFavorites';
 import { InitialSchema1711843200000 } from './migrations/1711843200000-InitialSchema';
 
@@ -17,7 +18,7 @@ export const AppDataSource = new DataSource({
   password: env.postgres.password,
   database: env.postgres.database,
   entities: [UserEntity, DriverEntity, DriverFavoriteEntity, ParkingLocationEntity, ParkingAdminEntity],
-  migrations: [InitialSchema1711843200000, DriverFavorites1711929600000],
+  migrations: [InitialSchema1711843200000, DriverFavorites1711929600000, DriverFavoriteAlerts1712016000000],
   synchronize: false,
   logging: false,
 });

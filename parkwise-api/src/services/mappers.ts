@@ -27,6 +27,8 @@ export const toParkingLocationDto = (facility: ParkingLocationEntity): ParkingLo
 export const toDriverFavoriteDto = (favorite: DriverFavoriteEntity): DriverFavoriteDto => ({
   facilityId: favorite.facilityId,
   createdAt: favorite.createdAt,
+  notifyOnAvailability: favorite.notifyOnAvailability,
+  notifyOnPriceDrop: favorite.notifyOnPriceDrop,
   facility: toParkingLocationDto(favorite.facility),
 });
 

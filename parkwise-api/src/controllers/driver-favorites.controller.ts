@@ -6,8 +6,8 @@ const driverFavoritesService = new DriverFavoritesService();
 
 export const listDriverFavorites = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const favorites = await driverFavoritesService.listFavorites(req.user!.uid);
-    res.json({ favorites });
+    const response = await driverFavoritesService.listFavorites(req.user!.uid);
+    res.json(response);
   } catch (error) {
     next(error);
   }
@@ -26,6 +26,15 @@ export const deleteDriverFavorite = async (req: AuthenticatedRequest, res: Respo
   try {
     await driverFavoritesService.removeFavorite(req.user!.uid, req.params.facilityId);
     res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateDriverFavoriteAlerts = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const favorite = await driverFavoritesService.updateAlerts(req.user!.uid, req.params.facilityId, req.body);
+    res.json({ favorite });
   } catch (error) {
     next(error);
   }
