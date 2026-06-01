@@ -1,59 +1,44 @@
-import type { NextFunction, Request, Response } from 'express';
-import { AuthService } from '../services/auth.service';
-import { AuthenticatedRequest } from '../types/auth.types';
-import { AppError } from '../types/app-error';
+import type { Request, Response } from 'express';
+import type { User } from '@prisma/client';
+import * as authService from '../services/auth.service';
+import { createSession, revokeSessionByToken } from '../lib/auth/session';
+import { SESSION_COOKIE, clearSessionCookie, setSessionCookie } from '../lib/auth/cookies';
+import { sendOk } from '../lib/api-response';
+import type { AuthenticatedRequest } from '../types/auth';
 
-const authService = new AuthService();
+async function startSession(req: Request, res: Response, user: User): Promise<void> {
+  const { token, expiresAt } = await createSession(user.id, {
+    userAgent: req.get('user-agent') ?? undefined,
+    ipAddress: req.ip,
+  });
+  setSessionCookie(res, token, expiresAt);
+}
 
-export const register = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const response = await authService.register(req.body);
-    res.status(201).json(response);
-  } catch (error) {
-    next(error);
-  }
-};
+export async function registerDriver(req: Request, res: Response): Promise<void> {
+  const user = await authService.registerDriver(req.body);
+  await startSession(req, res, user);
+  sendOk(res, { user: await authService.buildMe(user.id) }, 201);
+}
 
-export const login = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const response = await authService.login(req.body);
-    res.json(response);
-  } catch (error) {
-    next(error);
-  }
-};
+export async function registerOwner(req: Request, res: Response): Promise<void> {
+  const user = await authService.registerOwner(req.body);
+  await startSession(req, res, user);
+  sendOk(res, { user: await authService.buildMe(user.id) }, 201);
+}
 
-export const me = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  try {
-    const user = await authService.getCurrentUser(req.user!.uid);
-    res.json({ user });
-  } catch (error) {
-    next(error);
-  }
-};
+export async function login(req: Request, res: Response): Promise<void> {
+  const user = await authService.authenticate(req.body);
+  await startSession(req, res, user);
+  sendOk(res, { user: await authService.buildMe(user.id) });
+}
 
-export const oauthStart = async (req: Request, res: Response) => {
-  try {
-    const provider = req.params.provider;
-    const mode = typeof req.query.mode === 'string' ? req.query.mode : 'login';
-    const role = typeof req.query.role === 'string' ? req.query.role : 'driver';
-    const redirectUrl = authService.getOAuthAuthorizationUrl(provider, mode, role);
-    res.redirect(redirectUrl);
-  } catch (error) {
-    const message = error instanceof AppError ? error.message : 'Failed to start OAuth sign-in.';
-    res.redirect(authService.buildOAuthErrorRedirect(message));
-  }
-};
+export async function logout(req: Request, res: Response): Promise<void> {
+  const token = req.cookies?.[SESSION_COOKIE];
+  if (token) await revokeSessionByToken(token);
+  clearSessionCookie(res);
+  sendOk(res, { loggedOut: true });
+}
 
-export const oauthCallback = async (req: Request, res: Response) => {
-  try {
-    const provider = req.params.provider;
-    const code = typeof req.query.code === 'string' ? req.query.code : '';
-    const state = typeof req.query.state === 'string' ? req.query.state : '';
-    const redirectUrl = await authService.handleOAuthCallback(provider, code, state);
-    res.redirect(redirectUrl);
-  } catch (error) {
-    const message = error instanceof AppError ? error.message : 'OAuth sign-in failed.';
-    res.redirect(authService.buildOAuthErrorRedirect(message));
-  }
-};
+export async function me(req: AuthenticatedRequest, res: Response): Promise<void> {
+  sendOk(res, { user: await authService.buildMe(req.authUser!.id) });
+}
