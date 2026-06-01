@@ -1,0 +1,325 @@
+// ParkWise — Smart City Parking Management System
+// Prisma schema. Normalized PostgreSQL data model with UUID primary keys.
+//
+// PostGIS note: latitude/longitude are stored as plain Float columns and
+// proximity is computed with the Haversine formula in the application layer
+// (see src/lib/geo/haversine.ts). The schema stays PostGIS-compatible: a
+// future migration can add a `geography(Point, 4326)` column + GIST index and
+// swap the distance query without changing any of the models below.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  REGISTERED_DRIVER
+  FACILITY_OWNER
+  PARKING_ADMIN
+  SYSTEM_ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  REMOVED
+}
+
+enum FacilityType {
+  MANUAL
+  API_INTEGRATED
+}
+
+enum FacilityStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum CongestionLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AvailabilitySource {
+  MANUAL_UPDATE
+  API_SYNC
+  SEED
+}
+
+enum SyncStatus {
+  SUCCESS
+  FAILED
+  NEVER
+}
+
+// ---------------------------------------------------------------------------
+// Identity & profiles
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String        @id @default(uuid()) @db.Uuid
+  name          String
+  email         String        @unique
+  phoneNumber   String?
+  passwordHash  String
+  role          UserRole
+  accountStatus AccountStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  driverProfile   DriverProfile?
+  ownerProfile    FacilityOwnerProfile?
+  adminProfile    ParkingAdminProfile?
+  sysAdminProfile SystemAdminProfile?
+
+  sessions            Session[]
+  auditLogs           AuditLog[]        @relation("AuditActor")
+  availabilityUpdates AvailabilityLog[] @relation("AvailabilityUpdater")
+
+  @@index([email])
+  @@index([role])
+}
+
+model DriverProfile {
+  id         String  @id @default(uuid()) @db.Uuid
+  userId     String  @unique @db.Uuid
+  currentLat Float?
+  currentLng Float?
+
+  user               User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  favorites          FavoriteParkingFacility[]
+  recommendationLogs AIRecommendationLog[]
+}
+
+model FacilityOwnerProfile {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @db.Uuid
+  organizationName String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user              User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  facilities        ParkingFacility[]
+  createdAdmins     ParkingAdminProfile[]    @relation("AdminCreator")
+  createdAssignments ParkingAdminAssignment[] @relation("AssignmentCreator")
+}
+
+model ParkingAdminProfile {
+  id               String        @id @default(uuid()) @db.Uuid
+  userId           String        @unique @db.Uuid
+  adminStatus      AccountStatus @default(ACTIVE)
+  createdByOwnerId String        @db.Uuid
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user          User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdByOwner FacilityOwnerProfile    @relation("AdminCreator", fields: [createdByOwnerId], references: [id])
+  assignments   ParkingAdminAssignment[]
+
+  @@index([createdByOwnerId])
+}
+
+model SystemAdminProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approvedFacilities ParkingFacility[] @relation("FacilityApproval")
+}
+
+// ---------------------------------------------------------------------------
+// Facilities & operations
+// ---------------------------------------------------------------------------
+
+model ParkingFacility {
+  id                       String          @id @default(uuid()) @db.Uuid
+  ownerId                  String          @db.Uuid
+  name                     String
+  address                  String
+  latitude                 Float
+  longitude                Float
+  totalSpaces              Int
+  availableSpaces          Int
+  facilityType             FacilityType    @default(MANUAL)
+  hourlyPrice              Float
+  congestionLevel          CongestionLevel @default(MEDIUM)
+  status                   FacilityStatus  @default(PENDING)
+  approvalNotes            String?
+  approvedBySystemAdminId  String?         @db.Uuid
+  approvedAt               DateTime?
+  rejectedAt               DateTime?
+  suspendedAt              DateTime?
+  lastAvailabilityUpdateAt DateTime?
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  owner      FacilityOwnerProfile @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  approvedBy SystemAdminProfile?  @relation("FacilityApproval", fields: [approvedBySystemAdminId], references: [id])
+
+  assignments        ParkingAdminAssignment[]
+  favorites          FavoriteParkingFacility[]
+  apiIntegration     ApiIntegration?
+  availabilityLogs   AvailabilityLog[]
+  recommendationLogs AIRecommendationLog[]
+
+  @@index([status])
+  @@index([facilityType])
+  @@index([latitude, longitude])
+  @@index([ownerId])
+}
+
+model ParkingAdminAssignment {
+  id                   String           @id @default(uuid()) @db.Uuid
+  parkingAdminId       String           @db.Uuid
+  facilityId           String           @db.Uuid
+  status               AssignmentStatus @default(ACTIVE)
+  assignedAt           DateTime         @default(now())
+  suspendedAt          DateTime?
+  removedAt            DateTime?
+  replacedByAssignmentId String?        @unique @db.Uuid
+  createdByOwnerId     String           @db.Uuid
+  notes                String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  parkingAdmin   ParkingAdminProfile     @relation(fields: [parkingAdminId], references: [id], onDelete: Cascade)
+  facility       ParkingFacility         @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  createdByOwner FacilityOwnerProfile    @relation("AssignmentCreator", fields: [createdByOwnerId], references: [id])
+  replacedBy     ParkingAdminAssignment? @relation("AssignmentReplacement", fields: [replacedByAssignmentId], references: [id])
+  replaces       ParkingAdminAssignment? @relation("AssignmentReplacement")
+
+  // Application logic guarantees at most one ACTIVE assignment per
+  // (parkingAdminId, facilityId). A partial unique index enforcing this at the
+  // DB level is added in the migration (see prisma/migrations) — Prisma schema
+  // cannot express a filtered unique constraint directly.
+  @@index([parkingAdminId])
+  @@index([facilityId])
+  @@index([status])
+}
+
+model FavoriteParkingFacility {
+  id                     String   @id @default(uuid()) @db.Uuid
+  driverId               String   @db.Uuid
+  facilityId             String   @db.Uuid
+  // Optional smart-alert preferences (carried over from the existing app).
+  notifyOnAvailability   Boolean  @default(true)
+  notifyOnPriceDrop       Boolean  @default(true)
+  lastSeenAvailableSpaces Int?
+  lastSeenHourlyPrice     Float?
+  createdAt              DateTime @default(now())
+
+  driver   DriverProfile   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  facility ParkingFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@unique([driverId, facilityId])
+  @@index([driverId])
+}
+
+model ApiIntegration {
+  id                   String     @id @default(uuid()) @db.Uuid
+  facilityId           String     @unique @db.Uuid
+  endpointUrl          String
+  authToken            String // stored encrypted at rest (AES-256-GCM) — see src/lib/crypto.ts
+  refreshIntervalSeconds Int      @default(300)
+  isEnabled            Boolean    @default(true)
+  lastSyncAt           DateTime?
+  lastSyncStatus       SyncStatus @default(NEVER)
+  lastSyncError        String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  facility ParkingFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@index([facilityId])
+}
+
+// ---------------------------------------------------------------------------
+// Logs & audit
+// ---------------------------------------------------------------------------
+
+model AvailabilityLog {
+  id                 String             @id @default(uuid()) @db.Uuid
+  facilityId         String             @db.Uuid
+  oldAvailableSpaces Int
+  newAvailableSpaces Int
+  source             AvailabilitySource
+  updatedByUserId    String?            @db.Uuid
+  createdAt          DateTime           @default(now())
+
+  facility  ParkingFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  updatedBy User?           @relation("AvailabilityUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([facilityId])
+}
+
+model AIRecommendationLog {
+  id                String   @id @default(uuid()) @db.Uuid
+  driverId          String?  @db.Uuid
+  inputLatitude     Float
+  inputLongitude    Float
+  facilityId        String   @db.Uuid
+  distanceKm        Float
+  priceScore        Float
+  distanceScore     Float
+  availabilityScore Float
+  congestionScore   Float
+  finalScore        Float
+  rankPosition      Int
+  createdAt         DateTime @default(now())
+
+  driver   DriverProfile?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  facility ParkingFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@index([facilityId])
+  @@index([driverId])
+}
+
+model Session {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @db.Uuid
+  action      String
+  entityType  String
+  entityId    String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+}
