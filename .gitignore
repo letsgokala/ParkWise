@@ -7,3 +7,9 @@ coverage/
 .env*
 !.env.example
 database_dump.sql
+
+# test & tooling artifacts
+test-results/
+playwright-report/
+.vitest/
+*.tsbuildinfo

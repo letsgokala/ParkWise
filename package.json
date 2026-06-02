@@ -7,11 +7,22 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace parkwise-client",
+    "dev:client": "npm run dev --workspace parkwise-client",
+    "dev:api": "npm run dev --workspace parkwise-api",
     "server": "npm run dev --workspace parkwise-api",
     "build": "npm run build --workspace parkwise-client",
     "preview": "npm run preview --workspace parkwise-client",
     "lint": "npm run lint --workspace parkwise-client && npm run lint --workspace parkwise-api",
-    "ci": "npm run lint && npm run build",
+    "test": "npm run test --workspace parkwise-api",
+    "test:unit": "npm run test:unit --workspace parkwise-api",
+    "test:integration": "npm run test:integration --workspace parkwise-api",
+    "db:generate": "npm run db:generate --workspace parkwise-api",
+    "db:migrate": "npm run db:migrate --workspace parkwise-api",
+    "db:deploy": "npm run db:deploy --workspace parkwise-api",
+    "db:reset": "npm run db:reset --workspace parkwise-api",
+    "db:seed": "npm run db:seed --workspace parkwise-api",
+    "db:studio": "npm run db:studio --workspace parkwise-api",
+    "ci": "npm run lint && npm run test && npm run build",
     "clean": "rm -rf parkwise-client/dist"
   }
 }
