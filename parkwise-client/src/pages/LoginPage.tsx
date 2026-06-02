@@ -5,6 +5,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { auth, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { getPostLoginPath } from '../lib/routes';
 import { AuthShell } from '../components/auth/AuthShell';
 import { Button, Field, Input } from '../components/ui';
 
@@ -31,7 +32,7 @@ export function LoginPage() {
       const { user } = await auth.login(values.email, values.password);
       setUser(user);
       toast.success(`Welcome back, ${user.name.split(' ')[0]}!`);
-      navigate(from ?? user.homePath, { replace: true });
+      navigate(getPostLoginPath(user, from), { replace: true });
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Login failed.');
     }
