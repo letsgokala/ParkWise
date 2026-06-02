@@ -1,17 +1,22 @@
 import { app } from './app';
 import { env } from './config/env';
-import { AppDataSource } from './db/data-source';
+import { prisma } from './lib/prisma';
+import { ensureSystemAdmin } from './lib/bootstrap';
 
-async function bootstrap() {
-  await AppDataSource.initialize();
-  await AppDataSource.runMigrations();
+async function bootstrap(): Promise<void> {
+  try {
+    await prisma.$connect();
+    await ensureSystemAdmin();
+  } catch (error) {
+    console.error(
+      '⚠️  Database not ready. Run `npm run db:migrate` (and `npm run db:seed`) first.\n',
+      error,
+    );
+  }
 
   app.listen(env.port, () => {
-    console.log(`ParkWise API running on http://localhost:${env.port}`);
+    console.log(`🚗 ParkWise API running on http://localhost:${env.port} (${env.nodeEnv})`);
   });
 }
 
-bootstrap().catch((error) => {
-  console.error('Failed to initialize database:', error);
-  process.exit(1);
-});
+void bootstrap();

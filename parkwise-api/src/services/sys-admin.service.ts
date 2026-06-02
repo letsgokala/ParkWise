@@ -1,87 +1,137 @@
-import { randomUUID } from 'crypto';
-import { AppDataSource } from '../db/data-source';
-import { ParkingAdminEntity } from '../entities/ParkingAdmin.entity';
-import { ParkingLocationEntity } from '../entities/ParkingLocation.entity';
-import { UserEntity } from '../entities/User.entity';
-import { AppError } from '../types/app-error';
-import { AssignAdminInput, CreateFacilityInput, ParkingAdminRecordDto, ParkingLocationDto, SysAdminUserDto } from '../types/api.types';
-import { toParkingAdminRecordDto, toParkingLocationDto, toSysAdminUserDto } from './mappers';
+import { Prisma } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+import { notFound } from '../lib/errors';
+import { toManagedFacility } from '../lib/serializers';
+import { writeAudit, AuditActions } from './audit.service';
+import type { FacilityStatus } from '../lib/rbac/policy';
 
-export class SysAdminService {
-  private parkingLocationRepository = AppDataSource.getRepository(ParkingLocationEntity);
-  private userRepository = AppDataSource.getRepository(UserEntity);
-  private parkingAdminRepository = AppDataSource.getRepository(ParkingAdminEntity);
+const facilityWithOwner = {
+  owner: { include: { user: true } },
+} satisfies Prisma.ParkingFacilityInclude;
 
-  async getOverview(): Promise<{
-    facilities: ParkingLocationDto[];
-    users: SysAdminUserDto[];
-    admins: ParkingAdminRecordDto[];
-  }> {
-    const [facilities, users, admins] = await Promise.all([
-      this.parkingLocationRepository.find({ order: { facilityName: 'ASC' } }),
-      this.userRepository.find({ order: { createdAt: 'DESC' } }),
-      this.parkingAdminRepository.find({
-        relations: { user: true },
-        order: { userId: 'ASC' },
-      }),
-    ]);
+type FacilityWithOwner = Prisma.ParkingFacilityGetPayload<{ include: typeof facilityWithOwner }>;
 
-    return {
-      facilities: facilities.map(toParkingLocationDto),
-      users: users.map(toSysAdminUserDto),
-      admins: admins.map(toParkingAdminRecordDto),
-    };
+function toFacilityWithOwner(f: FacilityWithOwner) {
+  return {
+    ...toManagedFacility(f),
+    owner: {
+      ownerProfileId: f.owner.id,
+      organizationName: f.owner.organizationName,
+      name: f.owner.user.name,
+      email: f.owner.user.email,
+    },
+  };
+}
+
+export async function listPending() {
+  const facilities = await prisma.parkingFacility.findMany({
+    where: { status: 'PENDING' },
+    include: facilityWithOwner,
+    orderBy: { createdAt: 'asc' },
+  });
+  return facilities.map(toFacilityWithOwner);
+}
+
+export async function listAllFacilities(status?: FacilityStatus) {
+  const facilities = await prisma.parkingFacility.findMany({
+    where: status ? { status } : undefined,
+    include: facilityWithOwner,
+    orderBy: { createdAt: 'desc' },
+  });
+  return facilities.map(toFacilityWithOwner);
+}
+
+export async function getOverview() {
+  const [byStatus, totalUsers, totalFacilities] = await Promise.all([
+    prisma.parkingFacility.groupBy({ by: ['status'], _count: { _all: true } }),
+    prisma.user.count(),
+    prisma.parkingFacility.count(),
+  ]);
+
+  const stats = { pending: 0, approved: 0, rejected: 0, suspended: 0 };
+  for (const row of byStatus) {
+    stats[row.status.toLowerCase() as keyof typeof stats] = row._count._all;
   }
 
-  async createFacility(input: CreateFacilityInput): Promise<ParkingLocationDto> {
-    const { facilityName, address, latitude, longitude, totalSpaces, pricePerHour, status } = input;
+  return { totalUsers, totalFacilities, facilitiesByStatus: stats };
+}
 
-    if (!facilityName || !address) {
-      throw new AppError(400, 'Facility name and address are required.');
-    }
+async function reviewFacility(
+  facilityId: string,
+  data: Prisma.ParkingFacilityUpdateInput,
+  audit: { actorUserId: string; action: string; notes?: string },
+) {
+  const facility = await prisma.parkingFacility.findUnique({ where: { id: facilityId } });
+  if (!facility) throw notFound('Facility not found.');
 
-    const facility = this.parkingLocationRepository.create({
-      id: randomUUID(),
-      facilityName,
-      address,
-      latitude: Number(latitude),
-      longitude: Number(longitude),
-      totalSpaces: Number(totalSpaces),
-      availableSpaces: Number(totalSpaces),
-      pricePerHour: Number(pricePerHour),
-      status: status || 'Verified',
-    });
+  const updated = await prisma.parkingFacility.update({
+    where: { id: facilityId },
+    data,
+    include: facilityWithOwner,
+  });
 
-    await this.parkingLocationRepository.save(facility);
-    return toParkingLocationDto(facility);
-  }
+  await writeAudit({
+    actorUserId: audit.actorUserId,
+    action: audit.action,
+    entityType: 'ParkingFacility',
+    entityId: facilityId,
+    metadata: { previousStatus: facility.status, notes: audit.notes ?? null },
+  });
 
-  async deleteFacility(id: string): Promise<void> {
-    await this.parkingLocationRepository.delete({ id });
-  }
+  return toFacilityWithOwner(updated);
+}
 
-  async assignAdmin(input: AssignAdminInput): Promise<void> {
-    const { adminId, facilityId } = input;
+export async function approveFacility(
+  sysAdminProfileId: string,
+  actorUserId: string,
+  facilityId: string,
+  notes?: string,
+) {
+  return reviewFacility(
+    facilityId,
+    {
+      status: 'APPROVED',
+      approvedBy: { connect: { id: sysAdminProfileId } },
+      approvedAt: new Date(),
+      rejectedAt: null,
+      suspendedAt: null,
+      approvalNotes: notes ?? null,
+    },
+    { actorUserId, action: AuditActions.FACILITY_APPROVED, notes },
+  );
+}
 
-    if (!facilityId) {
-      throw new AppError(400, 'Facility id is required.');
-    }
+export async function rejectFacility(actorUserId: string, facilityId: string, notes?: string) {
+  return reviewFacility(
+    facilityId,
+    { status: 'REJECTED', rejectedAt: new Date(), approvalNotes: notes ?? null },
+    { actorUserId, action: AuditActions.FACILITY_REJECTED, notes },
+  );
+}
 
-    await AppDataSource.transaction(async (manager) => {
-      await manager.update(ParkingAdminEntity, { facilityId }, { facilityId: null });
+export async function suspendFacility(actorUserId: string, facilityId: string, notes?: string) {
+  return reviewFacility(
+    facilityId,
+    { status: 'SUSPENDED', suspendedAt: new Date(), approvalNotes: notes ?? null },
+    { actorUserId, action: AuditActions.FACILITY_SUSPENDED, notes },
+  );
+}
 
-      if (adminId) {
-        const parkingAdmin = await manager.findOneBy(ParkingAdminEntity, { userId: adminId });
-        if (!parkingAdmin) {
-          throw new AppError(404, 'Parking admin not found.');
-        }
+export async function listAuditLogs(limit: number, entityType?: string) {
+  const logs = await prisma.auditLog.findMany({
+    where: entityType ? { entityType } : undefined,
+    include: { actor: { select: { name: true, email: true, role: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
 
-        parkingAdmin.facilityId = null;
-        await manager.save(parkingAdmin);
-
-        parkingAdmin.facilityId = facilityId;
-        await manager.save(parkingAdmin);
-      }
-    });
-  }
+  return logs.map((log) => ({
+    id: log.id,
+    action: log.action,
+    entityType: log.entityType,
+    entityId: log.entityId,
+    metadata: log.metadata,
+    actor: log.actor ? { name: log.actor.name, email: log.actor.email, role: log.actor.role } : null,
+    createdAt: log.createdAt.toISOString(),
+  }));
 }
