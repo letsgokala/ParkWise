@@ -1,231 +1,429 @@
-export type UserRole = 'driver' | 'parking_admin' | 'sys_admin';
-export type OAuthProvider = 'google' | 'facebook' | 'github';
+/**
+ * Typed ParkWise API client.
+ *
+ * Auth uses HTTP-only session cookies (sent via credentials:'include') plus a
+ * double-submit CSRF token: the backend sets a readable `pw_csrf` cookie which
+ * we echo in the `x-csrf-token` header on every mutating request.
+ */
 
-export interface AppUser {
-  uid: string;
+const API_BASE = (import.meta.env.VITE_API_URL as string) || '/api';
+
+// ---------------------------------------------------------------------------
+// Shared types (mirror backend serializers)
+// ---------------------------------------------------------------------------
+
+export type Role = 'REGISTERED_DRIVER' | 'FACILITY_OWNER' | 'PARKING_ADMIN' | 'SYSTEM_ADMIN';
+export type FacilityStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
+export type FacilityType = 'MANUAL' | 'API_INTEGRATED';
+export type Congestion = 'LOW' | 'MEDIUM' | 'HIGH';
+export type AssignmentStatus = 'ACTIVE' | 'SUSPENDED' | 'REMOVED';
+
+export interface MeUser {
+  id: string;
+  name: string;
   email: string;
-  role: UserRole;
-  displayName: string;
+  phoneNumber: string | null;
+  role: Role;
+  accountStatus: string;
+  createdAt: string;
+  homePath: string;
+  profile: Record<string, unknown>;
 }
 
-export interface ParkingLocation {
-  facilityId: string;
-  facilityName: string;
+export interface Facility {
+  id: string;
+  name: string;
   address: string;
   latitude: number;
   longitude: number;
-  status: string;
   totalSpaces: number;
   availableSpaces: number;
-  pricePerHour: number;
-  createdAt?: string;
+  hourlyPrice: number;
+  facilityType: FacilityType;
+  congestionLevel: Congestion;
+  status: FacilityStatus;
+  occupancyRate: number;
+  isFull: boolean;
+  lastAvailabilityUpdateAt: string | null;
+  createdAt: string | null;
 }
 
-export interface ParkingAdminRecord {
-  adminId: string;
-  name: string;
-  email: string;
-  facilityID: string | null;
+export interface FacilityWithDistance extends Facility {
+  distanceKm: number | null;
 }
 
-export interface DriverFavorite {
+export interface ScoreBreakdown {
+  distanceScore: number;
+  priceScore: number;
+  availabilityScore: number;
+  congestionScore: number;
+  weights: { distance: number; price: number; availability: number; congestion: number };
+}
+
+export interface Recommendation {
+  facility: Facility;
+  rank: number;
+  distanceKm: number;
+  finalScore: number;
+  scorePercent: number;
+  isFull: boolean;
+  scoreBreakdown: ScoreBreakdown;
+}
+
+export interface Favorite {
+  id: string;
   facilityId: string;
-  createdAt: string;
   notifyOnAvailability: boolean;
   notifyOnPriceDrop: boolean;
-  facility: ParkingLocation;
+  createdAt: string | null;
+  facility: Facility;
 }
 
-export interface DriverSmartAlert {
+export interface SmartAlert {
   facilityId: string;
   facilityName: string;
   type: 'availability' | 'price-drop';
   message: string;
   availableSpaces: number;
-  pricePerHour: number;
-  triggeredAt: string;
+  hourlyPrice: number;
 }
 
-export interface SysAdminUser {
-  uid: string;
-  email: string;
-  role: UserRole;
-  displayName: string;
-  createdAt?: string;
+export interface ManagedFacility extends Facility {
+  ownerId: string;
+  approvalNotes: string | null;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  suspendedAt: string | null;
+  updatedAt: string | null;
 }
 
-export interface CreateFacilityPayload {
+export interface FacilityWithOwner extends ManagedFacility {
+  owner: { ownerProfileId: string; organizationName: string; name: string; email: string };
+}
+
+export interface Assignment {
+  id: string;
+  facilityId: string;
   facilityName: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  totalSpaces: number;
-  pricePerHour: number;
-  status: string;
+  parkingAdminId: string;
+  adminName: string;
+  adminEmail: string;
+  status: AssignmentStatus;
+  notes: string | null;
+  assignedAt: string | null;
+  suspendedAt: string | null;
+  removedAt: string | null;
+  replacedByAssignmentId: string | null;
+  createdAt: string | null;
 }
 
-interface AuthResponse {
-  token: string;
-  user: AppUser;
-}
-
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
-const TOKEN_KEY = 'parkwise_token';
-const USER_KEY = 'parkwise_user';
-
-const parseJson = async (response: Response) => {
-  const text = await response.text();
-  return text ? JSON.parse(text) : null;
-};
-
-async function apiFetch<T>(path: string, init: RequestInit = {}, requiresAuth = false): Promise<T> {
-  const headers = new Headers(init.headers || {});
-  headers.set('Content-Type', 'application/json');
-
-  if (requiresAuth) {
-    const token = getToken();
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-  }
-
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers,
-  });
-
-  const data = await parseJson(response);
-  if (!response.ok) {
-    throw new Error(data?.error || 'Request failed.');
-  }
-
-  return data as T;
-}
-
-export const saveSession = (session: AuthResponse) => {
-  localStorage.setItem(TOKEN_KEY, session.token);
-  localStorage.setItem(USER_KEY, JSON.stringify(session.user));
-};
-
-export const clearSession = () => {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-};
-
-export const getToken = () => localStorage.getItem(TOKEN_KEY);
-
-export const getStoredUser = (): AppUser | null => {
-  const raw = localStorage.getItem(USER_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as AppUser;
-  } catch {
-    clearSession();
-    return null;
-  }
-};
-
-export const registerUser = async (payload: {
+export interface ParkingAdminAccount {
+  id: string;
+  userId: string;
   name: string;
   email: string;
-  password: string;
-  phone: string;
-  role: 'driver' | 'parking_admin';
-}) => {
-  return apiFetch<AuthResponse>('/auth/register', {
-    method: 'POST',
-    body: JSON.stringify(payload),
+  phoneNumber: string | null;
+  adminStatus: string;
+  createdAt: string | null;
+  activeAssignments: { assignmentId: string; facilityId: string; facilityName: string }[];
+}
+
+export interface ApiIntegrationStatus {
+  id: string;
+  facilityId: string;
+  endpointUrl: string;
+  refreshIntervalSeconds: number;
+  isEnabled: boolean;
+  hasToken: boolean;
+  lastSyncAt: string | null;
+  lastSyncStatus: 'SUCCESS' | 'FAILED' | 'NEVER';
+  lastSyncError: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface RouteResult {
+  provider: string;
+  fallback: boolean;
+  distanceMeters: number;
+  durationSeconds: number;
+  geometry: { type: 'LineString'; coordinates: [number, number][] };
+}
+
+export interface AssignedFacility {
+  assignmentId: string;
+  facility: ManagedFacility;
+  canEditAvailability: boolean;
+  apiIntegration: ApiIntegrationStatus | null;
+}
+
+// ---------------------------------------------------------------------------
+// Core request helper
+// ---------------------------------------------------------------------------
+
+export class ApiError extends Error {
+  code: string;
+  status: number;
+  details?: unknown;
+  constructor(status: number, code: string, message: string, details?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]!) : null;
+}
+
+interface RequestOptions {
+  method?: string;
+  body?: unknown;
+  query?: Record<string, string | number | boolean | undefined>;
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const method = options.method ?? 'GET';
+  const url = new URL(`${API_BASE}${path}`, window.location.origin);
+  if (options.query) {
+    for (const [key, value] of Object.entries(options.query)) {
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    }
+  }
+
+  const headers: Record<string, string> = {};
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (method !== 'GET' && method !== 'HEAD') {
+    const csrf = readCookie('pw_csrf');
+    if (csrf) headers['x-csrf-token'] = csrf;
+  }
+
+  const response = await fetch(url.toString().replace(window.location.origin, ''), {
+    method,
+    headers,
+    credentials: 'include',
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
+
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : null;
+
+  if (!response.ok || (payload && payload.success === false)) {
+    const error = payload?.error ?? {};
+    throw new ApiError(
+      response.status,
+      error.code ?? 'ERROR',
+      error.message ?? 'Request failed.',
+      error.details,
+    );
+  }
+
+  return (payload?.data ?? null) as T;
+}
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+export const auth = {
+  me: () => request<{ user: MeUser }>('/auth/me'),
+  login: (email: string, password: string) =>
+    request<{ user: MeUser }>('/auth/login', { method: 'POST', body: { email, password } }),
+  registerDriver: (body: { name: string; email: string; phoneNumber: string; password: string }) =>
+    request<{ user: MeUser }>('/auth/register/driver', { method: 'POST', body }),
+  registerOwner: (body: {
+    fullName: string;
+    organizationName: string;
+    email: string;
+    phoneNumber: string;
+    password: string;
+  }) => request<{ user: MeUser }>('/auth/register/facility-owner', { method: 'POST', body }),
+  logout: () => request<{ loggedOut: boolean }>('/auth/logout', { method: 'POST' }),
 };
 
-export const loginUser = async (payload: { email: string; password: string }) => {
-  return apiFetch<AuthResponse>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
+// ---------------------------------------------------------------------------
+// Public + driver
+// ---------------------------------------------------------------------------
+
+export const facilities = {
+  nearby: (lat: number, lng: number, radiusKm = 5) =>
+    request<{ facilities: FacilityWithDistance[] }>('/facilities/nearby', {
+      query: { lat, lng, radiusKm },
+    }),
+  search: (params: {
+    lat?: number;
+    lng?: number;
+    maxDistanceKm?: number;
+    maxPrice?: number;
+    minAvailableSpaces?: number;
+    facilityType?: FacilityType;
+    availability?: 'any' | 'available';
+  }) => request<{ facilities: FacilityWithDistance[] }>('/facilities/search', { query: params }),
+  rank: (lat: number, lng: number, radiusKm = 5) =>
+    request<{ recommendations: Recommendation[] }>('/facilities/rank', {
+      query: { lat, lng, radiusKm },
+    }),
+  detail: (id: string) => request<{ facility: Facility }>(`/facilities/${id}`),
 };
 
-export const getOAuthStartUrl = (
-  provider: OAuthProvider,
-  options: { mode: 'login' | 'register'; role?: 'driver' | 'parking_admin' }
-) => {
-  const params = new URLSearchParams({
-    mode: options.mode,
-    role: options.role || 'driver',
-  });
-
-  return `${API_BASE}/auth/oauth/${provider}/start?${params.toString()}`;
+export const navigation = {
+  route: (fromLat: number, fromLng: number, toLat: number, toLng: number) =>
+    request<{ route: RouteResult }>('/navigation/route', {
+      query: { fromLat, fromLng, toLat, toLng },
+    }),
 };
 
-export const getCurrentUser = async () => {
-  return apiFetch<{ user: AppUser }>('/auth/me', {}, true);
+export const driver = {
+  listFavorites: () =>
+    request<{ favorites: Favorite[]; hiddenCount: number; alerts: SmartAlert[] }>('/driver/favorites'),
+  addFavorite: (facilityId: string) =>
+    request<{ favorite: Favorite }>(`/driver/favorites/${facilityId}`, { method: 'POST' }),
+  removeFavorite: (facilityId: string) =>
+    request<{ removed: boolean }>(`/driver/favorites/${facilityId}`, { method: 'DELETE' }),
+  updateFavoriteAlerts: (
+    facilityId: string,
+    body: { notifyOnAvailability?: boolean; notifyOnPriceDrop?: boolean },
+  ) => request<{ favorite: Favorite }>(`/driver/favorites/${facilityId}/alerts`, { method: 'PATCH', body }),
 };
 
-export const getParkingLocations = async (statuses: string[] = []) => {
-  const search = statuses.length > 0 ? `?statuses=${encodeURIComponent(statuses.join(','))}` : '';
-  return apiFetch<{ facilities: ParkingLocation[] }>(`/parking-locations${search}`);
+// ---------------------------------------------------------------------------
+// Facility owner
+// ---------------------------------------------------------------------------
+
+export interface OwnerDashboard {
+  facilities: ManagedFacility[];
+  stats: { total: number; pending: number; approved: number; rejected: number; suspended: number };
+  admins: ParkingAdminAccount[];
+}
+
+export const owner = {
+  dashboard: () => request<OwnerDashboard>('/owner/dashboard'),
+  listFacilities: () => request<{ facilities: ManagedFacility[] }>('/owner/facilities'),
+  listAssignments: () => request<{ assignments: Assignment[] }>('/owner/assignments'),
+  facilityDetail: (id: string) =>
+    request<{
+      facility: ManagedFacility;
+      assignments: Assignment[];
+      apiIntegration: ApiIntegrationStatus | null;
+    }>(`/owner/facilities/${id}`),
+  createFacility: (body: Record<string, unknown>) =>
+    request<{ facility: ManagedFacility }>('/owner/facilities', { method: 'POST', body }),
+  updateFacility: (id: string, body: Record<string, unknown>) =>
+    request<{ facility: ManagedFacility }>(`/owner/facilities/${id}`, { method: 'PATCH', body }),
+  listAdmins: () => request<{ admins: ParkingAdminAccount[] }>('/owner/parking-admins'),
+  createAdmin: (body: { name: string; email: string; phoneNumber: string; temporaryPassword: string }) =>
+    request<{ admin: ParkingAdminAccount }>('/owner/parking-admins', { method: 'POST', body }),
+  assignAdmin: (facilityId: string, body: { parkingAdminId: string; notes?: string }) =>
+    request<{ assignment: Assignment }>(`/owner/facilities/${facilityId}/assign-admin`, {
+      method: 'POST',
+      body,
+    }),
+  suspendAssignment: (assignmentId: string) =>
+    request<{ assignment: Assignment }>(`/owner/assignments/${assignmentId}/suspend`, { method: 'PATCH' }),
+  removeAssignment: (assignmentId: string) =>
+    request<{ assignment: Assignment }>(`/owner/assignments/${assignmentId}/remove`, { method: 'PATCH' }),
+  replaceAssignment: (assignmentId: string, body: { newParkingAdminId: string; notes?: string }) =>
+    request<{ assignment: Assignment }>(`/owner/assignments/${assignmentId}/replace`, {
+      method: 'POST',
+      body,
+    }),
 };
 
-export const getAssignedFacility = async () => {
-  return apiFetch<{ facility: ParkingLocation | null }>('/admin/facility', {}, true);
+// ---------------------------------------------------------------------------
+// Parking admin
+// ---------------------------------------------------------------------------
+
+export const parkingAdmin = {
+  assignedFacilities: () => request<{ facilities: AssignedFacility[] }>('/parking-admin/assigned-facilities'),
+  updateAvailability: (facilityId: string, availableSpaces: number) =>
+    request<{ facility: ManagedFacility }>(`/parking-admin/facilities/${facilityId}/availability`, {
+      method: 'PATCH',
+      body: { availableSpaces },
+    }),
+  updatePrice: (facilityId: string, hourlyPrice: number) =>
+    request<{ facility: ManagedFacility }>(`/parking-admin/facilities/${facilityId}/price`, {
+      method: 'PATCH',
+      body: { hourlyPrice },
+    }),
 };
 
-export const updateAssignedFacility = async (payload: { availableSpaces: number; pricePerHour: number }) => {
-  return apiFetch<{ facility: ParkingLocation }>('/admin/facility', {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  }, true);
+// ---------------------------------------------------------------------------
+// System admin
+// ---------------------------------------------------------------------------
+
+export interface SystemOverview {
+  totalUsers: number;
+  totalFacilities: number;
+  facilitiesByStatus: { pending: number; approved: number; rejected: number; suspended: number };
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  metadata: unknown;
+  actor: { name: string; email: string; role: string } | null;
+  createdAt: string;
+}
+
+export const systemAdmin = {
+  overview: () => request<SystemOverview>('/system-admin/overview'),
+  pending: () => request<{ facilities: FacilityWithOwner[] }>('/system-admin/facilities/pending'),
+  allFacilities: (status?: FacilityStatus) =>
+    request<{ facilities: FacilityWithOwner[] }>('/system-admin/facilities', {
+      query: status ? { status } : {},
+    }),
+  approve: (id: string, notes?: string) =>
+    request<{ facility: FacilityWithOwner }>(`/system-admin/facilities/${id}/approve`, {
+      method: 'PATCH',
+      body: { notes },
+    }),
+  reject: (id: string, notes?: string) =>
+    request<{ facility: FacilityWithOwner }>(`/system-admin/facilities/${id}/reject`, {
+      method: 'PATCH',
+      body: { notes },
+    }),
+  suspend: (id: string, notes?: string) =>
+    request<{ facility: FacilityWithOwner }>(`/system-admin/facilities/${id}/suspend`, {
+      method: 'PATCH',
+      body: { notes },
+    }),
+  auditLogs: (limit = 50) => request<{ logs: AuditLogEntry[] }>('/system-admin/audit-logs', { query: { limit } }),
 };
 
-export const getSysAdminOverview = async () => {
-  return apiFetch<{
-    facilities: ParkingLocation[];
-    users: SysAdminUser[];
-    admins: ParkingAdminRecord[];
-  }>('/sysadmin/overview', {}, true);
-};
+// ---------------------------------------------------------------------------
+// API integration
+// ---------------------------------------------------------------------------
 
-export const createFacility = async (payload: CreateFacilityPayload) => {
-  return apiFetch<{ facility: ParkingLocation }>('/sysadmin/facilities', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  }, true);
-};
-
-export const deleteFacility = async (id: string) => {
-  return apiFetch<void>(`/sysadmin/facilities/${id}`, {
-    method: 'DELETE',
-  }, true);
-};
-
-export const assignAdminToFacility = async (adminId: string, facilityId: string) => {
-  return apiFetch<void>('/sysadmin/assign-admin', {
-    method: 'POST',
-    body: JSON.stringify({ adminId: adminId || null, facilityId }),
-  }, true);
-};
-
-export const getDriverFavorites = async () => {
-  return apiFetch<{ favorites: DriverFavorite[]; alerts: DriverSmartAlert[] }>('/driver/favorites', {}, true);
-};
-
-export const createDriverFavorite = async (facilityId: string) => {
-  return apiFetch<{ favorite: DriverFavorite }>('/driver/favorites', {
-    method: 'POST',
-    body: JSON.stringify({ facilityId }),
-  }, true);
-};
-
-export const deleteDriverFavorite = async (facilityId: string) => {
-  return apiFetch<void>(`/driver/favorites/${facilityId}`, {
-    method: 'DELETE',
-  }, true);
-};
-
-export const updateDriverFavoriteAlerts = async (
-  facilityId: string,
-  payload: { notifyOnAvailability?: boolean; notifyOnPriceDrop?: boolean }
-) => {
-  return apiFetch<{ favorite: DriverFavorite }>(`/driver/favorites/${facilityId}/alerts`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  }, true);
+export const apiIntegration = {
+  status: (facilityId: string) =>
+    request<{ facility: ManagedFacility; integration: ApiIntegrationStatus }>(
+      `/api-integrations/${facilityId}/status`,
+    ),
+  sync: (facilityId: string) =>
+    request<{
+      synced: boolean;
+      warning?: string;
+      facility: ManagedFacility;
+      integration: ApiIntegrationStatus;
+    }>(`/api-integrations/${facilityId}/sync`, { method: 'POST' }),
+  update: (facilityId: string, body: Record<string, unknown>) =>
+    request<{ facility: ManagedFacility; integration: ApiIntegrationStatus }>(
+      `/api-integrations/${facilityId}`,
+      { method: 'PATCH', body },
+    ),
+  /** Simulate the external sensor count changing (dev/demo helper). */
+  simulate: async (facilityId: string, availableSpaces: number) => {
+    const csrf = readCookie('pw_csrf');
+    await fetch(`${API_BASE}/mock-external-parking/${facilityId}/availability`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) },
+      credentials: 'include',
+      body: JSON.stringify({ availableSpaces }),
+    });
+  },
 };
