@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { auth, type MeUser } from './api';
+import { ApiError, auth, type MeUser } from './api';
 
 interface AuthContextValue {
   user: MeUser | null;
@@ -16,14 +16,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    try {
-      const { user } = await auth.me();
-      setUser(user);
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
+    // Only a genuine 401 means "not signed in". Transient failures — rate
+    // limits (429), 5xx, network blips, or the dev API restarting — must NOT
+    // drop the session: the cookie is still valid, so we retry briefly and
+    // otherwise preserve current state instead of forcing a logout.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const { user } = await auth.me();
+        setUser(user);
+        setLoading(false);
+        return;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+        // Transient error — back off and retry before giving up.
+        await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+      }
     }
+    // Retries exhausted on transient errors: stop the spinner but keep whatever
+    // user we had (no spurious logout). A later refresh will reconcile.
+    setLoading(false);
   }, []);
 
   useEffect(() => {
