@@ -21,7 +21,9 @@
     "db:deploy": "npm run db:deploy --workspace parkwise-api",
     "db:reset": "npm run db:reset --workspace parkwise-api",
     "db:seed": "npm run db:seed --workspace parkwise-api",
+    "db:setup": "npm run db:setup --workspace parkwise-api",
     "db:studio": "npm run db:studio --workspace parkwise-api",
+    "setup": "npm install && npm run db:setup",
     "ci": "npm run lint && npm run test && npm run build",
     "clean": "rm -rf parkwise-client/dist"
   }
