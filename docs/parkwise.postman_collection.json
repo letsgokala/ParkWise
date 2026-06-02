@@ -1,0 +1,174 @@
+{
+  "info": {
+    "name": "ParkWise API",
+    "description": "ParkWise — Smart City Parking Management System. Cookie-based sessions: log in first, then the session cookie is sent automatically. A collection-level pre-request script reads the `pw_csrf` cookie and injects the `x-csrf-token` header on mutating requests. NOTE: in Postman settings, whitelist the `localhost` domain for cookies.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000/api" },
+    { "key": "cookieDomain", "value": "localhost" },
+    { "key": "csrfToken", "value": "" },
+    { "key": "facilityId", "value": "" },
+    { "key": "assignmentId", "value": "" },
+    { "key": "parkingAdminId", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.request.method !== 'GET' && pm.request.method !== 'HEAD') {",
+          "  try {",
+          "    const jar = pm.cookies.jar();",
+          "    jar.get(pm.variables.get('cookieDomain'), 'pw_csrf', (err, value) => {",
+          "      if (!err && value) {",
+          "        pm.collectionVariables.set('csrfToken', value);",
+          "        pm.request.headers.upsert({ key: 'x-csrf-token', value });",
+          "      }",
+          "    });",
+          "  } catch (e) { console.log('CSRF jar read failed — whitelist the localhost domain in Postman cookie settings.'); }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        { "name": "Health", "request": { "method": "GET", "url": "{{baseUrl}}/health" } },
+        { "name": "Version", "request": { "method": "GET", "url": "{{baseUrl}}/version" } }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register driver",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register/driver",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"New Driver\",\n  \"email\": \"newdriver@example.com\",\n  \"phoneNumber\": \"+251911223344\",\n  \"password\": \"Password123\"\n}" }
+          }
+        },
+        {
+          "name": "Register facility owner",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register/facility-owner",
+            "body": { "mode": "raw", "raw": "{\n  \"fullName\": \"New Owner\",\n  \"organizationName\": \"My Parking Co\",\n  \"email\": \"newowner@example.com\",\n  \"phoneNumber\": \"+251911223344\",\n  \"password\": \"Password123\"\n}" }
+          }
+        },
+        {
+          "name": "Login (seeded driver)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"driver1@parkwise.local\",\n  \"password\": \"Driver123!\"\n}" }
+          }
+        },
+        { "name": "Me", "request": { "method": "GET", "url": "{{baseUrl}}/auth/me" } },
+        { "name": "Logout", "request": { "method": "POST", "url": "{{baseUrl}}/auth/logout" } }
+      ]
+    },
+    {
+      "name": "Facilities (public)",
+      "item": [
+        { "name": "Nearby", "request": { "method": "GET", "url": "{{baseUrl}}/facilities/nearby?lat=9.0108&lng=38.7613&radiusKm=8" } },
+        { "name": "Search", "request": { "method": "GET", "url": "{{baseUrl}}/facilities/search?lat=9.0108&lng=38.7613&maxDistanceKm=8&availability=available" } },
+        { "name": "Rank (AI)", "request": { "method": "GET", "url": "{{baseUrl}}/facilities/rank?lat=9.0108&lng=38.7613&radiusKm=8" } },
+        { "name": "Detail", "request": { "method": "GET", "url": "{{baseUrl}}/facilities/{{facilityId}}" } },
+        { "name": "Navigation route", "request": { "method": "GET", "url": "{{baseUrl}}/navigation/route?fromLat=9.0108&fromLng=38.7613&toLat=8.9948&toLng=38.7885" } }
+      ]
+    },
+    {
+      "name": "Driver favorites",
+      "item": [
+        { "name": "List favorites", "request": { "method": "GET", "url": "{{baseUrl}}/driver/favorites" } },
+        { "name": "Add favorite", "request": { "method": "POST", "url": "{{baseUrl}}/driver/favorites/{{facilityId}}" } },
+        { "name": "Remove favorite", "request": { "method": "DELETE", "url": "{{baseUrl}}/driver/favorites/{{facilityId}}" } }
+      ]
+    },
+    {
+      "name": "Owner",
+      "item": [
+        { "name": "Dashboard", "request": { "method": "GET", "url": "{{baseUrl}}/owner/dashboard" } },
+        { "name": "List facilities", "request": { "method": "GET", "url": "{{baseUrl}}/owner/facilities" } },
+        {
+          "name": "Create facility",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/owner/facilities",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"My New Lot\",\n  \"address\": \"Bole, Addis Ababa\",\n  \"latitude\": 9.0,\n  \"longitude\": 38.75,\n  \"totalSpaces\": 80,\n  \"availableSpaces\": 30,\n  \"hourlyPrice\": 25,\n  \"facilityType\": \"MANUAL\",\n  \"congestionLevel\": \"MEDIUM\"\n}" }
+          }
+        },
+        {
+          "name": "Create parking admin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/owner/parking-admins",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"New Admin\",\n  \"email\": \"newadmin@example.com\",\n  \"phoneNumber\": \"+251911223344\",\n  \"temporaryPassword\": \"Password123\"\n}" }
+          }
+        },
+        {
+          "name": "Assign admin to facility",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/owner/facilities/{{facilityId}}/assign-admin",
+            "body": { "mode": "raw", "raw": "{\n  \"parkingAdminId\": \"{{parkingAdminId}}\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Parking admin",
+      "item": [
+        { "name": "Assigned facilities", "request": { "method": "GET", "url": "{{baseUrl}}/parking-admin/assigned-facilities" } },
+        {
+          "name": "Update availability (MANUAL)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/parking-admin/facilities/{{facilityId}}/availability",
+            "body": { "mode": "raw", "raw": "{\n  \"availableSpaces\": 20\n}" }
+          }
+        },
+        {
+          "name": "Update price",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/parking-admin/facilities/{{facilityId}}/price",
+            "body": { "mode": "raw", "raw": "{\n  \"hourlyPrice\": 35\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "System admin",
+      "item": [
+        { "name": "Overview", "request": { "method": "GET", "url": "{{baseUrl}}/system-admin/overview" } },
+        { "name": "Pending facilities", "request": { "method": "GET", "url": "{{baseUrl}}/system-admin/facilities/pending" } },
+        { "name": "All facilities", "request": { "method": "GET", "url": "{{baseUrl}}/system-admin/facilities" } },
+        { "name": "Approve", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/system-admin/facilities/{{facilityId}}/approve", "body": { "mode": "raw", "raw": "{ \"notes\": \"Looks good.\" }" } } },
+        { "name": "Reject", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/system-admin/facilities/{{facilityId}}/reject", "body": { "mode": "raw", "raw": "{ \"notes\": \"Incomplete details.\" }" } } },
+        { "name": "Suspend", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/system-admin/facilities/{{facilityId}}/suspend", "body": { "mode": "raw", "raw": "{ \"notes\": \"Under review.\" }" } } },
+        { "name": "Audit logs", "request": { "method": "GET", "url": "{{baseUrl}}/system-admin/audit-logs?limit=50" } }
+      ]
+    },
+    {
+      "name": "API integration",
+      "item": [
+        { "name": "Status", "request": { "method": "GET", "url": "{{baseUrl}}/api-integrations/{{facilityId}}/status" } },
+        { "name": "Sync now", "request": { "method": "POST", "url": "{{baseUrl}}/api-integrations/{{facilityId}}/sync" } }
+      ]
+    }
+  ]
+}

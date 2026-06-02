@@ -1,266 +1,235 @@
-# ParkWise
+# ParkWise — Smart City Parking Management System
 
-ParkWise is a smart parking management system built for three user roles:
+ParkWise is a web-based smart parking platform for Ethiopian urban areas (built
+around Addis Ababa). Drivers find nearby **approved** parking facilities, view
+real-time availability, compare price/distance/congestion, get **AI-ranked**
+recommendations, save favorites, and navigate with MapLibre. Facility Owners,
+Parking Administrators and System Administrators get dedicated role-based
+dashboards.
 
-- Drivers can browse nearby parking locations and get AI-assisted ranking suggestions.
-- Parking admins can manage the availability and pricing of the single facility assigned to them.
-- System admins can manage facilities and assign parking admins to those facilities.
+## Tech stack
 
-The current version uses:
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 19 + Vite + TypeScript + Tailwind CSS, React Router, **MapLibre GL JS**, React Hook Form + Zod, sonner |
+| Backend | Node.js + **Express** + TypeScript, **Prisma ORM**, Zod validation, Helmet, rate limiting |
+| Database | PostgreSQL (PostGIS-ready; distance via Haversine in app code) |
+| Auth | Email/password, bcrypt hashing, **DB-backed HTTP-only cookie sessions** (real logout/invalidation) + CSRF double-submit |
+| AI | Deterministic, explainable **coefficient scoring model** (no black box) |
+| Tests | Vitest (unit + integration via supertest) |
 
-- `React + Vite + TypeScript` for the frontend
-- `Express + TypeScript + TypeORM` for the API
-- `PostgreSQL` for authentication and application data
-- `Gemini` for facility ranking recommendations on the driver dashboard
+> The repository is a single **npm workspaces monorepo**: `parkwise-api`
+> (backend) and `parkwise-client` (frontend).
 
-## Features
+## Architecture at a glance
 
-- Email/password registration and login
-- Role-based dashboards for drivers, parking admins, and system admins
-- Seeded parking facilities on first backend start
-- Parking-admin assignment workflow
-- AI-assisted parking ranking for drivers
-- PostgreSQL-backed local development setup
+- **Strict RBAC** for 5 actors: Guest Driver, Registered Driver, Facility
+  Owner, Parking Administrator, System Administrator.
+- **Only `APPROVED` facilities** ever reach drivers (map, search, ranking,
+  navigation, favorites). `PENDING`/`REJECTED`/`SUSPENDED` are invisible.
+- **Assignment history is preserved** — admins are never hard-deleted; status is
+  tracked (`ACTIVE`/`SUSPENDED`/`REMOVED`).
+- **MANUAL** facilities are updated by admins; **API_INTEGRATED** facilities
+  sync availability from an external API (mocked for development) — admins can
+  never set their availability manually.
+- Every sensitive admin action is written to an **audit log**.
 
-## Tech Stack
+---
 
-- Frontend: React, Vite, TypeScript, Tailwind CSS, React Router
-- Backend: Express, TypeScript, TypeORM
-- Database: PostgreSQL
-- Maps: Leaflet, OpenStreetMap
-- AI: Google Gemini
+## Run with Docker (one command)
 
-## Prerequisites
-
-Install these first:
-
-- Node.js 20+
-- npm
-- PostgreSQL 14+ running locally
-- pgAdmin or `psql`
-
-## Clone The Repository
+The fastest way to run the whole stack (database, API, web) — needs only Docker:
 
 ```bash
-git clone https://github.com/letsgokala/ParkWise.git
-cd ParkWise
+cp .env.example .env     # optional: set GOOGLE_MAPS_API_KEY + VITE_GOOGLE_MAPS_API_KEY for Google Maps
+docker compose up --build
 ```
 
-## Install Dependencies
+Open **http://localhost:3000**. Compose starts PostgreSQL, runs migrations + seed
+(the one-shot `migrate` service), starts the API, and serves the web app via nginx
+which proxies `/api` to the API (so session cookies stay first-party). Stop with
+`docker compose down` (add `-v` to also delete the database volume).
+
+> The containerized stack is fully self-contained (its own Postgres) and does not
+> touch any local Postgres you may have. Map display uses Google Maps when
+> `VITE_GOOGLE_MAPS_API_KEY` is set, otherwise the free MapLibre/OpenFreeMap basemap.
+
+---
+
+## Prerequisites (manual / non-Docker setup)
+
+- **Node.js 20+** and npm
+- **PostgreSQL 14+** — either via Docker (recommended) or a native install
+
+## 1. Install
 
 ```bash
+git clone <your-repo-url> ParkWise
+cd ParkWise
 npm install
 ```
 
-The repository is organized as a small workspace monorepo:
-
-- `parkwise-client` contains the frontend app
-- `parkwise-api` contains the backend API
-
-You still run everything from the project root using the same commands.
-
-## Database Setup
-
-You can use pgAdmin or `psql`.
-
-### Option 1: Using pgAdmin
-
-1. Open pgAdmin and connect to your local PostgreSQL server.
-2. Right-click `Databases`.
-3. Choose `Create > Database...`
-4. Set the database name to `parkwise`.
-5. Save it.
-6. Make sure you know the password for the PostgreSQL user you will use, usually `postgres`.
-
-### Option 2: Using psql
-
-```sql
-CREATE DATABASE parkwise;
-```
-
-## Environment Variables
-
-This project uses two local env files:
-
-- `.env` for the backend
-- `.env.local` for the frontend
-
-### Backend `.env`
-
-Create a `.env` file in the project root:
-
-```env
-CLIENT_URL=http://localhost:3000
-API_URL=http://localhost:4000
-PORT=4000
-
-PGHOST=localhost
-PGPORT=5432
-PGDATABASE=parkwise
-PGUSER=postgres
-PGPASSWORD=your_local_postgres_password
-
-JWT_SECRET=replace-this-with-a-long-random-string
-
-SYS_ADMIN_EMAIL=sysadmin@parkwise.local
-SYS_ADMIN_PASSWORD=ParkWiseAdmin123!
-SYS_ADMIN_NAME=System Admin
-
-GOOGLE_OAUTH_CLIENT_ID=
-GOOGLE_OAUTH_CLIENT_SECRET=
-FACEBOOK_OAUTH_CLIENT_ID=
-FACEBOOK_OAUTH_CLIENT_SECRET=
-GITHUB_OAUTH_CLIENT_ID=
-GITHUB_OAUTH_CLIENT_SECRET=
-```
-
-### Frontend `.env.local`
-
-Create a `.env.local` file in the project root:
-
-```env
-VITE_GEMINI_API_KEY=your_gemini_api_key
-```
-
-## OAuth Setup
-
-OAuth buttons are wired for:
-
-- Google
-- Facebook
-- GitHub
-
-Google is the primary provider and the smoothest one to test first.
-
-For local development, set these callback URLs in each provider console:
-
-- Google: `http://localhost:4000/api/auth/oauth/google/callback`
-- Facebook: `http://localhost:4000/api/auth/oauth/facebook/callback`
-- GitHub: `http://localhost:4000/api/auth/oauth/github/callback`
-
-You should also make sure your frontend origin is allowed where the provider requires it:
-
-- `http://localhost:3000`
-
-## First Start Behavior
-
-When you start the backend for the first time, it will automatically:
-
-- create the required PostgreSQL tables
-- seed the built-in parking facilities
-- create a default system admin account if it does not already exist
-
-Default system admin credentials come from `.env`:
-
-- Email: `SYS_ADMIN_EMAIL`
-- Password: `SYS_ADMIN_PASSWORD`
-
-## Run The App
-
-Start the backend:
+## 2. Configure environment
 
 ```bash
-npm run server
+cp .env.example .env
 ```
 
-In a second terminal, start the frontend:
+Then open `.env` and set at least:
+
+- `DATABASE_URL` — your Postgres connection string
+- `SESSION_SECRET` — a long random string (`openssl rand -base64 48`)
+- `APP_ENCRYPTION_KEY` — a 32-byte key (`openssl rand -base64 32`)
+
+`VITE_MAPTILER_KEY` is optional — leave it blank to use free OpenStreetMap
+tiles. `ROUTING_PROVIDER_URL` is optional — leave it blank to use the
+straight-line navigation fallback.
+
+## 3. Start PostgreSQL
+
+**Option A — Docker (recommended):**
 
 ```bash
-npm run dev
+docker compose up -d
+# DATABASE_URL in .env should be:
+# postgresql://parkwise:parkwise@localhost:5432/parkwise?schema=public
 ```
 
-Then open:
+**Option B — native Postgres:** create a database (e.g. `parkwise`) and point
+`DATABASE_URL` at it.
 
-```text
-http://localhost:3000
+## 4. Migrate & seed
+
+```bash
+npm run db:migrate     # applies the Prisma schema (creates all tables)
+npm run db:seed        # loads demo data + the system admin
 ```
 
-## Available Scripts
+## 5. Run
 
-- `npm run dev` starts the Vite frontend on port `3000`
-- `npm run server` starts the Express API on port `4000`
-- `npm run build` builds the frontend for production
-- `npm run lint` runs TypeScript type-checking
+```bash
+# terminal 1 — API on http://localhost:4000
+npm run dev:api
 
-## User Flows
-
-### Driver
-
-- Register as a driver
-- Sign in
-- Browse parking facilities
-- Use AI-powered ranking recommendations
-
-### Parking Admin
-
-- Register as a parking admin
-- Sign in
-- Wait until a system admin assigns a facility
-- Manage only the assigned facility's price and available spaces
-
-### System Admin
-
-- Sign in with the configured system-admin credentials
-- View users and facilities
-- Create or delete facilities
-- Assign a parking admin to one facility
-
-## Notes
-
-- OAuth buttons are still present in the UI, but the current PostgreSQL version uses email/password auth only.
-- The driver dashboard can still be viewed in guest mode.
-- The backend polls for some dashboard updates to keep the UI in sync without changing the existing interface design.
-
-## Project Structure
-
-```text
-.
-├── parkwise-client/
-│   ├── src/
-│   ├── index.html
-│   └── vite.config.ts
-├── parkwise-api/
-│   └── src/
-│       ├── config/
-│       ├── controllers/
-│       ├── db/
-│       │   ├── migrations/
-│       │   └── seeds/
-│       ├── entities/
-│       ├── middleware/
-│       ├── routes/
-│       ├── services/
-│       └── types/
-├── .env.example
-└── README.md
+# terminal 2 — web app on http://localhost:3000
+npm run dev:client
 ```
 
-## Troubleshooting
+Open **http://localhost:3000**. The dev server proxies `/api` to the backend so
+session cookies are first-party.
 
-### `password authentication failed for user "postgres"`
+---
 
-Your PostgreSQL credentials in `.env` do not match your local PostgreSQL server.
+## Seeded test accounts
 
-Check:
+| Role | Email | Password |
+| --- | --- | --- |
+| System Admin | `sysadmin@parkwise.local` | `ParkWiseAdmin123!` |
+| Facility Owner | `owner1@parkwise.local` | `Owner123!` |
+| Facility Owner | `owner2@parkwise.local` | `Owner123!` |
+| Parking Admin | `admin1@parkwise.local` | `Admin123!` |
+| Parking Admin | `admin2@parkwise.local` | `Admin123!` |
+| Registered Driver | `driver1@parkwise.local` | `Driver123!` |
+| Registered Driver | `driver2@parkwise.local` | `Driver123!` |
 
-- `PGPORT` is correct, usually `5432`
-- `PGUSER` is correct
-- `PGPASSWORD` matches the password you use in pgAdmin
+Seeded facilities (around Addis Ababa): **Bole Medhanialem** (MANUAL, approved),
+**Mexico Square Smart Garage** (API_INTEGRATED, approved), **Piazza Central
+Lot** (pending), **Megenagna Hub** (suspended).
 
-### `database "parkwise" does not exist`
+> The System Admin password comes from `SYS_ADMIN_PASSWORD` in `.env`.
 
-Create the database first in pgAdmin or with:
+---
 
-```sql
-CREATE DATABASE parkwise;
+## Key routes
+
+**Frontend (web app)**
+
+| Path | Who | Purpose |
+| --- | --- | --- |
+| `/` | everyone | Landing page |
+| `/map` | guest + driver | Map + list + filters + navigation + favorites |
+| `/facilities/:id` | everyone | Facility detail |
+| `/login`, `/register/driver`, `/register/facility-owner` | guest | Auth |
+| `/driver/dashboard` `/driver/recommendations` `/driver/favorites` | driver | Driver area |
+| `/owner/...` | owner | Facilities, parking admins, assignments |
+| `/parking-admin/dashboard` | parking admin | Operations |
+| `/system-admin/...` | system admin | Review & monitoring |
+
+**API** — see [docs/API.md](docs/API.md) for the full reference. Highlights:
+
+```
+POST /api/auth/register/driver | /register/facility-owner | /login | /logout
+GET  /api/auth/me
+GET  /api/facilities/nearby | /search | /rank | /:id
+POST/GET/DELETE /api/driver/favorites...
+GET  /api/navigation/route
+... /api/owner/...  /api/parking-admin/...  /api/system-admin/...  /api/api-integrations/...
+GET  /api/health | /api/version
 ```
 
-### Gemini ranking is not working
+---
 
-Make sure `.env.local` contains a valid `VITE_GEMINI_API_KEY`.
+## Testing & quality
 
-## Future Improvements
+```bash
+npm run lint            # TypeScript type-check (client + api)
+npm test                # Vitest (unit always; integration when a DB is reachable)
+npm run test:unit       # AI scoring, distance, RBAC policy, validators
+npm run test:integration  # full API flows via supertest (needs DATABASE_URL)
+npm run build           # production build of the web app
+```
 
-- Re-enable OAuth on top of the PostgreSQL backend
-- Add Docker and `docker-compose` for app + database setup
-- Add tests for API routes and auth flows
+Unit tests run with no database. Integration tests connect to `DATABASE_URL`
+and **skip automatically** if no database is reachable. To run them, point
+`DATABASE_URL` at a Postgres (a throwaway/test DB is recommended) and re-run.
+
+A manual end-to-end smoke checklist lives in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+---
+
+## Project structure
+
+```
+ParkWise/
+├─ parkwise-api/              # Express + Prisma backend
+│  ├─ prisma/
+│  │  ├─ schema.prisma        # data model (enums, models, indexes)
+│  │  ├─ migrations/          # baseline SQL migration
+│  │  └─ seed.ts              # demo data
+│  ├─ src/
+│  │  ├─ config/env.ts        # Zod-validated environment
+│  │  ├─ lib/                 # prisma, auth/session, rbac, ai/scoring, geo, crypto, serializers
+│  │  ├─ middleware/          # auth, rbac, csrf, validate, rate-limit, error
+│  │  ├─ validators/          # Zod request schemas
+│  │  ├─ services/            # business logic per domain
+│  │  ├─ controllers/         # thin HTTP handlers
+│  │  ├─ routes/              # REST route groups
+│  │  └─ app.ts / index.ts
+│  └─ tests/ (unit + integration)
+├─ parkwise-client/           # React + Vite frontend
+│  └─ src/ (lib, components, pages)
+├─ docs/                      # API.md, RBAC.md, DEPLOYMENT.md, Postman collection
+├─ docker-compose.yml         # local PostgreSQL
+├─ .env.example
+└─ package.json               # workspace root
+```
+
+## Documentation
+
+- [docs/API.md](docs/API.md) — full REST API reference + response format
+- [docs/RBAC.md](docs/RBAC.md) — roles, permissions, and the access-control matrix
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — deploying to Render/Railway/Fly + Vercel
+
+## Limitations & next improvements
+
+- Payments, IoT/gate hardware, and nationwide rollout are intentionally **out of
+  scope** (per the SRS).
+- Navigation uses a straight-line fallback unless `ROUTING_PROVIDER_URL` (an
+  OSRM-compatible server) is configured.
+- API-integrated availability is driven by a **mock** external service and a
+  manual/triggered sync; a background scheduler is a natural next step.
+- OAuth sign-in (Google/etc.) was removed in favor of spec-focused
+  email/password auth and can be re-added on top of the session layer.
+- Automated Playwright E2E is documented as a manual checklist; wiring it into CI
+  is a follow-up.

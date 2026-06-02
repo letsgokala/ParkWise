@@ -27,21 +27,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-    env:
-      VITE_GEMINI_API_KEY: test-key
-      VITE_API_PROXY_TARGET: http://localhost:4000
-      CLIENT_URL: http://localhost:3000
-      PORT: 4000
-      PGHOST: localhost
-      PGPORT: 5432
-      PGDATABASE: parkwise
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      JWT_SECRET: ci-secret
-      SYS_ADMIN_EMAIL: sysadmin@parkwise.local
-      SYS_ADMIN_PASSWORD: ParkWiseAdmin123!
-      SYS_ADMIN_NAME: System Admin
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,17 +37,45 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Create .env
+        run: |
+          cat > .env <<'EOF'
+          NODE_ENV=test
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/parkwise?schema=public
+          SESSION_SECRET=ci-session-secret-ci-session-secret
+          APP_ENCRYPTION_KEY=ci-encryption-key-ci-encryption-key
+          CLIENT_URL=http://localhost:3000
+          API_URL=http://localhost:4000
+          PORT=4000
+          SYS_ADMIN_EMAIL=sysadmin@parkwise.local
+          SYS_ADMIN_PASSWORD=ParkWiseAdmin123!
+          SYS_ADMIN_NAME=System Admin
+          VITE_API_PROXY_TARGET=http://localhost:4000
+          EOF
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Apply migrations
+        run: npm run db:deploy
+
+      - name: Seed database
+        run: npm run db:seed
+
+      - name: Lint (type-check)
         run: npm run lint
+
+      - name: Test (unit + integration)
+        run: npm test
 
       - name: Build client
         run: npm run build
 
       - name: Start API
-        run: npm run server > api.log 2>&1 &
+        run: npm run dev:api > api.log 2>&1 &
 
       - name: Wait for API health
         run: |
