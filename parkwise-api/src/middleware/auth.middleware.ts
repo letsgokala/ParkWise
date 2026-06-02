@@ -1,31 +1,65 @@
 import type { NextFunction, Response } from 'express';
-import jwt from 'jsonwebtoken';
-import { env } from '../config/env';
-import { AppError } from '../types/app-error';
-import { UserRole } from '../types/api.types';
-import { AppJwtPayload, AuthenticatedRequest } from '../types/auth.types';
+import { SESSION_COOKIE } from '../lib/auth/cookies';
+import { resolveSession } from '../lib/auth/session';
+import { forbidden, unauthenticated } from '../lib/errors';
+import type { AuthenticatedRequest } from '../types/auth';
+import type { AccountRole } from '../lib/rbac/roles';
 
-export const authenticate = (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+/** Require a valid, active session. Attaches req.authUser. */
+export async function requireAuth(
+  req: AuthenticatedRequest,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-    if (!token) {
-      throw new AppError(401, 'Authentication required.');
+    const token = req.cookies?.[SESSION_COOKIE];
+    const user = token ? await resolveSession(token) : null;
+    if (!user) {
+      next(unauthenticated());
+      return;
     }
-
-    req.user = jwt.verify(token, env.jwtSecret) as AppJwtPayload;
+    if (user.accountStatus !== 'ACTIVE') {
+      next(forbidden('Your account is suspended or inactive.'));
+      return;
+    }
+    req.authUser = user;
     next();
   } catch (error) {
-    next(error instanceof AppError ? error : new AppError(401, 'Invalid or expired session.'));
+    next(error);
   }
-};
+}
 
-export const authorize = (roles: UserRole[]) => (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
-  if (!req.user || !roles.includes(req.user.role)) {
-    next(new AppError(403, 'You do not have access to this resource.'));
-    return;
+/** Attach req.authUser if a valid session exists, but allow guests through. */
+export async function optionalAuth(
+  req: AuthenticatedRequest,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const token = req.cookies?.[SESSION_COOKIE];
+    if (token) {
+      const user = await resolveSession(token);
+      if (user && user.accountStatus === 'ACTIVE') {
+        req.authUser = user;
+      }
+    }
+    next();
+  } catch (error) {
+    next(error);
   }
+}
 
-  next();
-};
+/** Restrict to specific roles. Must be used after requireAuth. */
+export function requireRole(...roles: AccountRole[]) {
+  return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
+    if (!req.authUser) {
+      next(unauthenticated());
+      return;
+    }
+    if (!roles.includes(req.authUser.role)) {
+      next(forbidden('You do not have permission to perform this action.'));
+      return;
+    }
+    next();
+  };
+}
