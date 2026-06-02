@@ -11,6 +11,7 @@ export interface AuthUser {
   role: AccountRole;
   accountStatus: AccountStatus;
   sessionId: string;
+  sessionExpiresAt: Date;
   // Role-specific profile ids (only the relevant one is populated).
   driverProfileId?: string;
   ownerProfileId?: string;

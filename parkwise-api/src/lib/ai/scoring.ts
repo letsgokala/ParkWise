@@ -78,8 +78,10 @@ const clamp01 = (value: number): number => Math.min(Math.max(value, 0), 1);
  *
  * Callers are responsible for passing only APPROVED facilities; SUSPENDED /
  * PENDING / REJECTED facilities must never reach this function. Full
- * facilities (availableSpaces <= 0) are heavily penalized (availabilityScore
- * = 0) so they sink to the bottom but remain visible, per the use-case spec.
+ * facilities (availableSpaces <= 0) get availabilityScore 0 AND are forced
+ * below every facility that still has space (see the sort) — a full lot is
+ * never recommended over one you can actually park in, but it stays visible
+ * at the bottom of the list, per the use-case spec.
  */
 export function rankFacilities<T extends ScoringCandidate>(
   candidates: T[],
@@ -141,8 +143,14 @@ export function rankFacilities<T extends ScoringCandidate>(
     } satisfies Omit<RankedFacility<T>, 'rank'>;
   });
 
-  // Best score first; break ties by nearer distance, then by id for stability.
+  // Ordering, per business constraint:
+  //   1. Any facility with free space ranks above every full one — a full lot
+  //      is never recommended over one you can park in (full lots still appear,
+  //      at the bottom).
+  //   2. Then highest finalScore first.
+  //   3. Ties broken by nearer distance, then id, for deterministic output.
   scored.sort((a, b) => {
+    if (a.isFull !== b.isFull) return a.isFull ? 1 : -1;
     if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore;
     if (a.distanceKm !== b.distanceKm) return a.distanceKm - b.distanceKm;
     return a.facility.id.localeCompare(b.facility.id);

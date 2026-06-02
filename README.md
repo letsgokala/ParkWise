@@ -105,6 +105,22 @@ npm run db:migrate     # applies the Prisma schema (creates all tables)
 npm run db:seed        # loads demo data + the system admin
 ```
 
+**One-command alternative.** Once `.env` points at a running Postgres, you can
+generate the client, apply migrations, and seed in a single step:
+
+```bash
+npm run db:setup       # = db:generate + db:deploy + db:seed
+```
+
+Or, straight from a fresh clone (installs deps first):
+
+```bash
+npm run setup          # = npm install + db:setup
+```
+
+The seed is **idempotent** (stable IDs + upserts), so re-running it just refreshes
+the demo data. To wipe and rebuild from scratch, use `npm run db:reset`.
+
 ## 5. Run
 
 ```bash
@@ -132,9 +148,28 @@ session cookies are first-party.
 | Registered Driver | `driver1@parkwise.local` | `Driver123!` |
 | Registered Driver | `driver2@parkwise.local` | `Driver123!` |
 
-Seeded facilities (around Addis Ababa): **Bole Medhanialem** (MANUAL, approved),
-**Mexico Square Smart Garage** (API_INTEGRATED, approved), **Piazza Central
-Lot** (pending), **Megenagna Hub** (suspended).
+Seeded facilities — **10 across Addis Ababa**, a mix of MANUAL and smart
+(API_INTEGRATED) types and statuses so the map, AI ranking, and sync flow all
+have variety:
+
+| Facility | Type | Status |
+| --- | --- | --- |
+| Bole Medhanialem Parking | MANUAL | Approved |
+| Mexico Square Smart Garage | API_INTEGRATED | Approved |
+| Kazanchis Smart Parking | API_INTEGRATED | Approved |
+| Meskel Square Parking | MANUAL | Approved |
+| Sarbet Plaza Parking | MANUAL | Approved |
+| Gerji Mebrat Hail Smart Lot | API_INTEGRATED | Approved |
+| Bole Airport Parking | API_INTEGRATED | Approved |
+| Arat Kilo Campus Parking | MANUAL | Approved |
+| Piazza Central Lot | MANUAL | Pending |
+| Megenagna Hub Parking | MANUAL | Suspended |
+
+The 4 smart facilities are pre-wired to ParkWise's **built-in mock provider**
+(`/api/mock-external-parking/:facilityId/availability`), so **Sync now** works
+out of the box on a fresh clone with no external API. Point any facility at your
+own mock (e.g. mockapi.io) by editing its API integration; it just needs to
+return JSON `{ "availableSpaces": <number> }`.
 
 > The System Admin password comes from `SYS_ADMIN_PASSWORD` in `.env`.
 

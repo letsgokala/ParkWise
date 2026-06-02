@@ -21,6 +21,7 @@
     "db:reset": "dotenv -e ../.env -- prisma migrate reset",
     "db:push": "dotenv -e ../.env -- prisma db push",
     "db:seed": "dotenv -e ../.env -- tsx prisma/seed.ts",
+    "db:setup": "npm run db:generate && npm run db:deploy && npm run db:seed",
     "db:studio": "dotenv -e ../.env -- prisma studio"
   },
   "dependencies": {

@@ -6,11 +6,12 @@
  * scope limited to the seeded facilities/drivers. Safe to run repeatedly and
  * is invoked automatically by `prisma migrate reset`.
  *
- * Creates: 1 system admin, 2 facility owners, 4 facilities (2 APPROVED incl.
- * 1 API_INTEGRATED, 1 PENDING, 1 SUSPENDED), 2 registered drivers, 2 parking
- * admins, assignments (with one historical REMOVED record), favorites
- * (including a suspended-facility favorite to prove visibility filtering), and
- * availability logs.
+ * Creates: 1 system admin, 2 facility owners, 10 parking facilities spread
+ * across Addis Ababa — 8 APPROVED, 1 PENDING, 1 SUSPENDED; 4 API_INTEGRATED
+ * (smart, wired to the built-in mock provider) + 6 MANUAL — plus 2 registered
+ * drivers, 2 parking admins, assignments (with one historical REMOVED record),
+ * favorites (including a suspended-facility favorite to prove visibility
+ * filtering), and availability logs.
  */
 import { PrismaClient } from '@prisma/client';
 import { env } from '../src/config/env';
@@ -31,6 +32,12 @@ const ID = {
   facilityMexico: '00000000-0000-4000-8000-000000000102',
   facilityPiazza: '00000000-0000-4000-8000-000000000103',
   facilityMegenagna: '00000000-0000-4000-8000-000000000104',
+  facilityKazanchis: '00000000-0000-4000-8000-000000000105',
+  facilityMeskel: '00000000-0000-4000-8000-000000000106',
+  facilitySarbet: '00000000-0000-4000-8000-000000000107',
+  facilityGerji: '00000000-0000-4000-8000-000000000108',
+  facilityAirport: '00000000-0000-4000-8000-000000000109',
+  facilityAratKilo: '00000000-0000-4000-8000-000000000110',
 } as const;
 
 async function main() {
@@ -258,6 +265,140 @@ async function main() {
     },
   });
 
+  // --- Additional facilities (data-driven; easy to extend) -----------------
+  // A spread of real Addis Ababa areas mixing MANUAL and API_INTEGRATED
+  // (smart) types so the map, AI ranking, and sync flow all have variety.
+  // Add an entry here (with an `api` block to make it smart) to grow the set.
+  type SeedFacility = {
+    id: string;
+    ownerId: string;
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    totalSpaces: number;
+    availableSpaces: number;
+    facilityType: 'MANUAL' | 'API_INTEGRATED';
+    hourlyPrice: number;
+    congestionLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+    api?: { token: string }; // present → also creates an ApiIntegration (smart)
+  };
+
+  const moreFacilities: SeedFacility[] = [
+    {
+      id: ID.facilityKazanchis,
+      ownerId: owner2.id,
+      name: 'Kazanchis Smart Parking',
+      address: 'Kirkos, Kazanchis business district, Addis Ababa',
+      latitude: 9.0157,
+      longitude: 38.7639,
+      totalSpaces: 180,
+      availableSpaces: 60,
+      facilityType: 'API_INTEGRATED',
+      hourlyPrice: 28,
+      congestionLevel: 'MEDIUM',
+      api: { token: 'mock-secret-token-kazanchis' },
+    },
+    {
+      id: ID.facilityMeskel,
+      ownerId: owner1.id,
+      name: 'Meskel Square Parking',
+      address: 'Kirkos, Meskel Square, Addis Ababa',
+      latitude: 9.0107,
+      longitude: 38.7613,
+      totalSpaces: 250,
+      availableSpaces: 120,
+      facilityType: 'MANUAL',
+      hourlyPrice: 20,
+      congestionLevel: 'MEDIUM',
+    },
+    {
+      id: ID.facilitySarbet,
+      ownerId: owner1.id,
+      name: 'Sarbet Plaza Parking',
+      address: 'Nifas Silk-Lafto, Sarbet, Addis Ababa',
+      latitude: 8.9869,
+      longitude: 38.7569,
+      totalSpaces: 90,
+      availableSpaces: 70,
+      facilityType: 'MANUAL',
+      hourlyPrice: 22,
+      congestionLevel: 'LOW',
+    },
+    {
+      id: ID.facilityGerji,
+      ownerId: owner2.id,
+      name: 'Gerji Mebrat Hail Smart Lot',
+      address: 'Bole, Gerji Mebrat Hail, Addis Ababa',
+      latitude: 8.9966,
+      longitude: 38.8268,
+      totalSpaces: 110,
+      availableSpaces: 15,
+      facilityType: 'API_INTEGRATED',
+      hourlyPrice: 18,
+      congestionLevel: 'HIGH',
+      api: { token: 'mock-secret-token-gerji' },
+    },
+    {
+      id: ID.facilityAirport,
+      ownerId: owner2.id,
+      name: 'Bole Airport Parking',
+      address: 'Bole International Airport, Addis Ababa',
+      latitude: 8.9779,
+      longitude: 38.7993,
+      totalSpaces: 300,
+      availableSpaces: 140,
+      facilityType: 'API_INTEGRATED',
+      hourlyPrice: 50,
+      congestionLevel: 'MEDIUM',
+      api: { token: 'mock-secret-token-airport' },
+    },
+    {
+      id: ID.facilityAratKilo,
+      ownerId: owner1.id,
+      name: 'Arat Kilo Campus Parking',
+      address: 'Arada, Arat Kilo, Addis Ababa',
+      latitude: 9.0357,
+      longitude: 38.7634,
+      totalSpaces: 70,
+      availableSpaces: 5,
+      facilityType: 'MANUAL',
+      hourlyPrice: 15,
+      congestionLevel: 'HIGH',
+    },
+  ];
+
+  for (const f of moreFacilities) {
+    const { api, ...rest } = f;
+    await prisma.parkingFacility.upsert({
+      where: { id: f.id },
+      update: {},
+      create: {
+        ...rest,
+        status: 'APPROVED',
+        approvedBySystemAdminId: sysAdminProfile.id,
+        approvedAt: new Date('2026-01-15T08:00:00Z'),
+        lastAvailabilityUpdateAt: new Date('2026-01-15T08:00:00Z'),
+      },
+    });
+    if (api) {
+      // Point smart facilities at ParkWise's built-in mock provider so a fresh
+      // clone can exercise the sync flow with zero external setup.
+      await prisma.apiIntegration.upsert({
+        where: { facilityId: f.id },
+        update: {},
+        create: {
+          facilityId: f.id,
+          endpointUrl: `${env.apiUrl}/api/mock-external-parking/${f.id}/availability`,
+          authToken: encryptSecret(api.token),
+          refreshIntervalSeconds: 120,
+          isEnabled: true,
+          lastSyncStatus: 'NEVER',
+        },
+      });
+    }
+  }
+
   // --- API integration for the smart garage --------------------------------
   await prisma.apiIntegration.upsert({
     where: { facilityId: facilityMexico.id },
@@ -278,6 +419,7 @@ async function main() {
     facilityMexico.id,
     facilityPiazza.id,
     facilityMegenagna.id,
+    ...moreFacilities.map((f) => f.id),
   ];
   await prisma.parkingAdminAssignment.deleteMany({ where: { facilityId: { in: seededFacilityIds } } });
 
@@ -335,6 +477,13 @@ async function main() {
       { facilityId: facilityMexico.id, oldAvailableSpaces: 0, newAvailableSpaces: 85, source: 'SEED' },
       { facilityId: facilityPiazza.id, oldAvailableSpaces: 0, newAvailableSpaces: 12, source: 'SEED' },
       { facilityId: facilityMegenagna.id, oldAvailableSpaces: 0, newAvailableSpaces: 0, source: 'SEED' },
+      // Initial availability for every additional facility.
+      ...moreFacilities.map((f) => ({
+        facilityId: f.id,
+        oldAvailableSpaces: 0,
+        newAvailableSpaces: f.availableSpaces,
+        source: 'SEED' as const,
+      })),
       // Example of an admin manual update on the Bole facility.
       {
         facilityId: facilityBole.id,
@@ -347,6 +496,7 @@ async function main() {
   });
 
   console.log('✅ Seed complete.');
+  console.log('   Facilities: 10 across Addis Ababa (4 smart / 6 manual)');
   console.log('   System admin:', env.systemAdmin.email);
   console.log('   Owners: owner1@parkwise.local / owner2@parkwise.local (Owner123!)');
   console.log('   Admins: admin1@parkwise.local / admin2@parkwise.local (Admin123!)');

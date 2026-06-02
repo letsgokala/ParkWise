@@ -64,12 +64,34 @@ export async function resolveSession(token: string): Promise<AuthUser | null> {
     role: user.role as AccountRole,
     accountStatus: user.accountStatus,
     sessionId: session.id,
+    sessionExpiresAt: session.expiresAt,
     driverProfileId: user.driverProfile?.id,
     ownerProfileId: user.ownerProfile?.id,
     adminProfileId: user.adminProfile?.id,
     adminStatus: user.adminProfile?.adminStatus,
     sysAdminProfileId: user.sysAdminProfile?.id,
   };
+}
+
+// Sliding expiration: once an active session has used up more than half its
+// lifetime, push the expiry back to a full TTL again. This keeps active users
+// logged in indefinitely while genuinely idle sessions still lapse.
+const RENEWAL_THRESHOLD_FRACTION = 0.5;
+
+/**
+ * Extend a session's expiry if it is past the renewal threshold. Returns the
+ * new expiry (so the caller can refresh the cookie), or null if no renewal was
+ * needed. Best-effort — callers should not let a failure here break the request.
+ */
+export async function renewSessionIfNeeded(user: AuthUser): Promise<Date | null> {
+  const ttlMs = env.sessionTtlHours * 60 * 60 * 1000;
+  const remainingMs = user.sessionExpiresAt.getTime() - Date.now();
+  if (remainingMs >= ttlMs * RENEWAL_THRESHOLD_FRACTION) {
+    return null;
+  }
+  const expiresAt = new Date(Date.now() + ttlMs);
+  await prisma.session.update({ where: { id: user.sessionId }, data: { expiresAt } });
+  return expiresAt;
 }
 
 /** Revoke a single session by its raw token (logout). Idempotent. */
