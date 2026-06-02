@@ -1,0 +1,105 @@
+# ParkWise — full stack in Docker.
+#
+#   docker compose up --build         # build images and start db + migrate + api + web
+#   open http://localhost:3000
+#   docker compose down               # stop
+#   docker compose down -v            # stop and delete the database volume
+#
+# Everything (database, API, web) runs in containers — no local Node/Postgres
+# needed. The `migrate` service applies the Prisma schema and seeds demo data
+# before the API starts. Values can be overridden via a root .env file.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: parkwise-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-parkwise}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-parkwise}
+      POSTGRES_DB: ${POSTGRES_DB:-parkwise}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Not published by default to avoid clashing with a local Postgres on 5432.
+    # Uncomment to access it from the host:
+    # ports:
+    #   - "${POSTGRES_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-parkwise} -d ${POSTGRES_DB:-parkwise}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: apply migrations + seed, then exit. The API waits for it.
+  migrate:
+    build:
+      context: ./parkwise-api
+      dockerfile: Dockerfile
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-parkwise}:${POSTGRES_PASSWORD:-parkwise}@postgres:5432/${POSTGRES_DB:-parkwise}?schema=public"
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-parkwise-docker-dev-encryption-key-change-me}
+      SYS_ADMIN_EMAIL: ${SYS_ADMIN_EMAIL:-sysadmin@parkwise.local}
+      SYS_ADMIN_PASSWORD: ${SYS_ADMIN_PASSWORD:-ParkWiseAdmin123!}
+      SYS_ADMIN_NAME: ${SYS_ADMIN_NAME:-System Admin}
+      API_URL: ${API_URL:-http://localhost:4000}
+    command: ["sh", "-c", "npx prisma migrate deploy && npx tsx prisma/seed.ts"]
+
+  api:
+    build:
+      context: ./parkwise-api
+      dockerfile: Dockerfile
+    container_name: parkwise-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4000
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
+      API_URL: ${API_URL:-http://localhost:4000}
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-parkwise}:${POSTGRES_PASSWORD:-parkwise}@postgres:5432/${POSTGRES_DB:-parkwise}?schema=public"
+      SESSION_SECRET: ${SESSION_SECRET:-parkwise-docker-dev-session-secret-change-me}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-parkwise-docker-dev-encryption-key-change-me}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SYS_ADMIN_EMAIL: ${SYS_ADMIN_EMAIL:-sysadmin@parkwise.local}
+      SYS_ADMIN_PASSWORD: ${SYS_ADMIN_PASSWORD:-ParkWiseAdmin123!}
+      SYS_ADMIN_NAME: ${SYS_ADMIN_NAME:-System Admin}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      ROUTING_PROVIDER_URL: ${ROUTING_PROVIDER_URL:-}
+    ports:
+      - "${API_PORT:-4000}:4000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: ./parkwise-client
+      dockerfile: Dockerfile
+      args:
+        # Vite bakes these at build time. The web container's nginx proxies
+        # /api -> api:4000, so the SPA stays same-origin (cookies work).
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+        VITE_MAPTILER_KEY: ${VITE_MAPTILER_KEY:-}
+        VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-}
+    container_name: parkwise-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  postgres_data:
