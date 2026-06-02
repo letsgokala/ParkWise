@@ -23,7 +23,7 @@ import {
   Spinner,
   SyncStatusBadge,
 } from '../../components/ui';
-import { formatRelativeTime } from '../../lib/format';
+import { availabilityColor, availabilityLabel, formatRelativeTime } from '../../lib/format';
 
 export function OwnerFacilityDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -224,6 +224,22 @@ export function OwnerFacilityDetailPage() {
             <CardTitle>API integration</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Current availability — refreshed from the external API on each sync */}
+            <div className="flex items-baseline gap-2 rounded-xl bg-gray-50 px-4 py-3">
+              <span
+                className="text-3xl font-bold tabular-nums"
+                style={{ color: availabilityColor(facility.availableSpaces, facility.totalSpaces) }}
+              >
+                {facility.availableSpaces}
+              </span>
+              <span className="text-sm text-gray-500">/ {facility.totalSpaces} spaces available now</span>
+              <span
+                className="ml-auto text-xs font-semibold uppercase tracking-wide"
+                style={{ color: availabilityColor(facility.availableSpaces, facility.totalSpaces) }}
+              >
+                {availabilityLabel(facility.availableSpaces, facility.totalSpaces)}
+              </span>
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
               <div className="text-gray-500">
                 <p className="break-all">{apiIntegration.endpointUrl}</p>
