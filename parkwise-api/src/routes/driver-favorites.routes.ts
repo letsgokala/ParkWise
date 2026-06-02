@@ -1,15 +1,32 @@
 import { Router } from 'express';
-import {
-  createDriverFavorite,
-  deleteDriverFavorite,
-  listDriverFavorites,
-  updateDriverFavoriteAlerts,
-} from '../controllers/driver-favorites.controller';
-import { authenticate, authorize } from '../middleware/auth.middleware';
+import * as favoritesController from '../controllers/driver-favorites.controller';
+import { asyncHandler } from '../lib/async-handler';
+import { requireAuth, requireRole } from '../middleware/auth.middleware';
+import { validate } from '../middleware/validate.middleware';
+import { uuidParams } from '../validators/common';
+import { favoriteAlertsSchema } from '../validators/favorite.validators';
 
+// Mounted at /driver/favorites. All endpoints require a logged-in registered
+// driver (UC4, business rule 8).
 export const driverFavoritesRouter = Router();
+driverFavoritesRouter.use(requireAuth, requireRole('REGISTERED_DRIVER'));
 
-driverFavoritesRouter.get('/driver/favorites', authenticate, authorize(['driver']), listDriverFavorites);
-driverFavoritesRouter.post('/driver/favorites', authenticate, authorize(['driver']), createDriverFavorite);
-driverFavoritesRouter.patch('/driver/favorites/:facilityId/alerts', authenticate, authorize(['driver']), updateDriverFavoriteAlerts);
-driverFavoritesRouter.delete('/driver/favorites/:facilityId', authenticate, authorize(['driver']), deleteDriverFavorite);
+driverFavoritesRouter.get('/', asyncHandler(favoritesController.list));
+
+driverFavoritesRouter.post(
+  '/:facilityId',
+  validate({ params: uuidParams('facilityId') }),
+  asyncHandler(favoritesController.add),
+);
+
+driverFavoritesRouter.delete(
+  '/:facilityId',
+  validate({ params: uuidParams('facilityId') }),
+  asyncHandler(favoritesController.remove),
+);
+
+driverFavoritesRouter.patch(
+  '/:facilityId/alerts',
+  validate({ params: uuidParams('facilityId'), body: favoriteAlertsSchema }),
+  asyncHandler(favoritesController.updateAlerts),
+);

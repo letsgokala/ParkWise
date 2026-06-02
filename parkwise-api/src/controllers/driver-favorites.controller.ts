@@ -1,41 +1,34 @@
-import type { NextFunction, Response } from 'express';
-import { DriverFavoritesService } from '../services/driver-favorites.service';
-import { AuthenticatedRequest } from '../types/auth.types';
+import type { Response } from 'express';
+import * as favoriteService from '../services/favorite.service';
+import { sendOk } from '../lib/api-response';
+import { badRequest } from '../lib/errors';
+import type { AuthenticatedRequest } from '../types/auth';
 
-const driverFavoritesService = new DriverFavoritesService();
+function driverId(req: AuthenticatedRequest): string {
+  const id = req.authUser?.driverProfileId;
+  if (!id) throw badRequest('Driver profile not found for this account.');
+  return id;
+}
 
-export const listDriverFavorites = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  try {
-    const response = await driverFavoritesService.listFavorites(req.user!.uid);
-    res.json(response);
-  } catch (error) {
-    next(error);
-  }
-};
+export async function list(req: AuthenticatedRequest, res: Response): Promise<void> {
+  sendOk(res, await favoriteService.listFavorites(driverId(req)));
+}
 
-export const createDriverFavorite = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  try {
-    const favorite = await driverFavoritesService.addFavorite(req.user!.uid, req.body);
-    res.status(201).json({ favorite });
-  } catch (error) {
-    next(error);
-  }
-};
+export async function add(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const favorite = await favoriteService.addFavorite(driverId(req), req.params.facilityId!);
+  sendOk(res, { favorite }, 201);
+}
 
-export const deleteDriverFavorite = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  try {
-    await driverFavoritesService.removeFavorite(req.user!.uid, req.params.facilityId);
-    res.status(204).send();
-  } catch (error) {
-    next(error);
-  }
-};
+export async function remove(req: AuthenticatedRequest, res: Response): Promise<void> {
+  await favoriteService.removeFavorite(driverId(req), req.params.facilityId!);
+  sendOk(res, { removed: true });
+}
 
-export const updateDriverFavoriteAlerts = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  try {
-    const favorite = await driverFavoritesService.updateAlerts(req.user!.uid, req.params.facilityId, req.body);
-    res.json({ favorite });
-  } catch (error) {
-    next(error);
-  }
-};
+export async function updateAlerts(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const favorite = await favoriteService.updateFavoriteAlerts(
+    driverId(req),
+    req.params.facilityId!,
+    req.body,
+  );
+  sendOk(res, { favorite });
+}
