@@ -68,6 +68,37 @@ describe('AI coefficient scoring model', () => {
     expect(ranked[0]!.isFull).toBe(true);
   });
 
+  it('never ranks a full facility above one with free space, even if it is closer and cheaper', () => {
+    // Full lot sitting at the origin, cheapest, lowest congestion — it would
+    // win on raw score, but it has zero spaces so it must rank LAST.
+    const fullButIdeal: ScoringCandidate = {
+      id: 'full-ideal',
+      latitude: 9.0,
+      longitude: 38.75,
+      hourlyPrice: 5,
+      availableSpaces: 0,
+      totalSpaces: 100,
+      congestionLevel: 'LOW',
+    };
+    // Farther, pricier, more congested — but it actually has space.
+    const availableButWorse: ScoringCandidate = {
+      id: 'available',
+      latitude: 9.05,
+      longitude: 38.8,
+      hourlyPrice: 50,
+      availableSpaces: 10,
+      totalSpaces: 100,
+      congestionLevel: 'HIGH',
+    };
+    const ranked = rankFacilities([fullButIdeal, availableButWorse], origin, { maxDistanceKm: 10 });
+    expect(ranked[0]!.facility.id).toBe('available');
+    expect(ranked[1]!.facility.id).toBe('full-ideal');
+    expect(ranked[1]!.isFull).toBe(true);
+    // The full lot still has a higher raw weighted score — proving the
+    // available-first rule is what put it on top, not the score alone.
+    expect(ranked[1]!.finalScore).toBeGreaterThan(ranked[0]!.finalScore);
+  });
+
   it('computes finalScore exactly from the documented formula', () => {
     // Single candidate at the origin: distance 0 → distanceScore 1.
     // maxPrice == its own price → priceScore 0. availability 50/100 = 0.5.
